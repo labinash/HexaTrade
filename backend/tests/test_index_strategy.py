@@ -316,3 +316,21 @@ def test_entry_validation_rules_are_documented():
     assert "5m" in text
     assert "gate" in text.lower()
 
+
+def test_nifty_weekly_expiry_switches_tuesday_from_sept_2025():
+    from datetime import date
+
+    from app.domain.index_strategy import is_index_expiry
+
+    assert is_index_expiry("NIFTY", date(2024, 8, 29)) is True
+    assert is_index_expiry("NIFTY", date(2024, 9, 3)) is False
+    assert is_index_expiry("NIFTY", date(2025, 8, 28)) is True
+    assert is_index_expiry("NIFTY", date(2025, 9, 2)) is True
+    assert is_index_expiry("NIFTY", date(2025, 9, 4)) is False
+    assert is_index_expiry("NIFTY", date(2026, 10, 6)) is True
+    assert is_index_expiry("SENSEX", date(2025, 9, 5)) is True
+    assert is_index_expiry("SENSEX", date(2025, 9, 2)) is False
+    listed = {date(2025, 8, 27)}
+    assert is_index_expiry("NIFTY", date(2025, 8, 27), listed) is True
+    assert is_index_expiry("NIFTY", date(2025, 8, 28), listed) is False
+

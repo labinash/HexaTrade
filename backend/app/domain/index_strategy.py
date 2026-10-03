@@ -914,15 +914,17 @@ def _avg(values) -> float | None:
     return round(sum(nums) / len(nums), 4)
 
 
-def is_index_expiry(symbol: str, day) -> bool:
-    """Weekly expiry heuristic when the historical futures row is not dated."""
+def is_index_expiry(symbol: str, day, listed_expiries=None) -> bool:
+    """Weekly expiry: listed dates win; else NIFTY Thu until Sept 2025, Tue after. SENSEX Friday."""
+    if listed_expiries:
+        return day in listed_expiries
     weekday = day.weekday()
     name = str(symbol or "").upper()
     if name == "SENSEX":
         return weekday == 4
     from datetime import date as date_cls
 
-    if isinstance(day, date_cls) and day >= date_cls(2024, 9, 1):
+    if isinstance(day, date_cls) and day >= date_cls(2025, 9, 1):
         return weekday == 1
     return weekday == 3
 
