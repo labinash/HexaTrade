@@ -24,6 +24,7 @@ from app.domain.chart_signals import BUY, SELL, ChartSignal, rising_edge
 from app.domain.dashboard_brief import implied_market_direction, score_percent
 from app.domain.historical import expected_session_bars, in_session, normalize_timeframe, timeframe_minutes
 from app.domain.indicators import atr, ema, rsi, session_vwap
+from app.domain.market_facts import market_facts_from_bars
 from app.domain.index_strategy import (
     ENTRY_VALIDATION_RULES,
     config_from_dict,
@@ -243,6 +244,22 @@ def chart_payload(
             "cooldown_minutes": int(config.cooldown_minutes),
             "entry_validation": list(ENTRY_VALIDATION_RULES),
         },
+    }
+    last_facts = market_facts_from_bars(
+        bars,
+        ema_period=params.ema_period if params else 20,
+        rsi_period=params.rsi_period if params else 14,
+        atr_period=params.atr_period if params else 14,
+        timeframe=hist_tf,
+    )
+    payload["last_facts"] = {
+        "close": last_facts.close,
+        "ema20": last_facts.ema20,
+        "rsi": last_facts.rsi,
+        "atr": last_facts.atr,
+        "vwap": last_facts.vwap,
+        "volume": last_facts.volume,
+        "timeframe": last_facts.timeframe,
     }
     if runtime is not None and mode_key == LIVE_PAPER:
         last_unix = candles[-1]["time"] if candles else None

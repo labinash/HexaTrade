@@ -5,7 +5,7 @@ from datetime import datetime, time
 
 from app.core.clock import IST, to_ist
 from app.domain.candles import Bar
-from app.domain.indicators import atr, ema, rsi, session_vwap
+from app.domain.market_facts import market_facts_from_bars
 
 
 BULLISH = "BULLISH"
@@ -407,31 +407,29 @@ def snapshot_from_bars(bars: list[Bar], params: StrategyParams) -> MarketSnapsho
             volume=None, volume_ema=None, vwap=None, rsi=None, atr=None, now=None, reference_found=False,
         )
     last = bars[-1]
-    closes = [bar.close for bar in bars]
-    volumes = [bar.volume for bar in bars]
-    ema_series = ema(closes, params.ema_period)
-    volume_series = ema(volumes, params.volume_ema_period)
-    rsi_series = rsi(closes, params.rsi_period)
-    atr_series = atr([bar.high for bar in bars], [bar.low for bar in bars], closes, params.atr_period)
-    typical = [(bar.high + bar.low + bar.close) / 3 for bar in bars]
-    keys = [to_ist(bar.start).date() for bar in bars]
-    vwap_series = session_vwap(typical, volumes, keys)
+    facts = market_facts_from_bars(
+        bars,
+        ema_period=params.ema_period,
+        rsi_period=params.rsi_period,
+        atr_period=params.atr_period,
+        volume_ema_period=params.volume_ema_period,
+    )
     ref_close, ref_oi, found = _reference(bars, params.momentum_time, params.oi_time)
     clock = to_ist(last.start).time().replace(second=0, microsecond=0)
     price_label = "spot" if params.price_source == "spot" else "front-month futures"
     oi_label = "selected option OI" if params.oi_source == "selected_option" else "front-month futures OI"
     return MarketSnapshot(
-        close=last.close,
-        open=last.open,
-        ema=ema_series[-1],
+        close=facts.close,
+        open=facts.open,
+        ema=facts.ema20,
         reference_close=ref_close,
         oi=last.oi,
         reference_oi=ref_oi,
-        volume=last.volume,
-        volume_ema=volume_series[-1],
-        vwap=vwap_series[-1],
-        rsi=rsi_series[-1],
-        atr=atr_series[-1],
+        volume=facts.volume,
+        volume_ema=facts.volume_ema,
+        vwap=facts.vwap,
+        rsi=facts.rsi,
+        atr=facts.atr,
         now=clock,
         reference_found=found,
         price_source_label=price_label,

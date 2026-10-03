@@ -16,7 +16,8 @@ from datetime import datetime, time
 
 from app.core.clock import to_ist
 from app.domain.candles import Bar
-from app.domain.indicators import atr, ema, rsi, session_vwap
+from app.domain.indicators import ema
+from app.domain.market_facts import market_facts_from_bars
 
 
 CE_TOTAL = 9
@@ -266,21 +267,20 @@ def futures_state(bars: list[Bar], config: OptionBuyConfig, *, symbol: str | Non
     if not bars:
         return FuturesState(symbol=symbol, data_quality=quality or "Index futures candles are unavailable")
     last = bars[-1]
-    closes = [bar.close for bar in bars]
-    volumes = [bar.volume for bar in bars]
-    volume_series = ema(volumes, config.volume_ema_period)
-    rsi_series = rsi(closes, config.rsi_period)
-    atr_series = atr([bar.high for bar in bars], [bar.low for bar in bars], closes, config.atr_period)
-    typical = [(bar.high + bar.low + bar.close) / 3 for bar in bars]
-    keys = [to_ist(bar.start).date() for bar in bars]
-    vwap_series = session_vwap(typical, volumes, keys)
+    facts = market_facts_from_bars(
+        bars,
+        ema_period=config.ema_period,
+        rsi_period=config.rsi_period,
+        atr_period=config.atr_period,
+        volume_ema_period=config.volume_ema_period,
+    )
     return FuturesState(
-        close=last.close,
-        volume=last.volume,
-        volume_ema=volume_series[-1],
-        vwap=vwap_series[-1],
-        rsi=rsi_series[-1],
-        atr=atr_series[-1],
+        close=facts.close,
+        volume=facts.volume,
+        volume_ema=facts.volume_ema,
+        vwap=facts.vwap,
+        rsi=facts.rsi,
+        atr=facts.atr,
         bar_time=last.start,
         symbol=symbol,
         data_quality=quality,

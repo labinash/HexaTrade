@@ -931,6 +931,10 @@ def live_index_decisions(db: Session, runtime, config: PaperAutoConfig) -> dict:
         payload["walk_minutes"] = INDEX_PAPER_MINUTES
         payload["bar_unix"] = int(last.start.timestamp())
         payload["close"] = float(last.close)
+        payload["ema"] = facts.get("ema")
+        payload["rsi"] = facts.get("rsi")
+        payload["atr"] = facts.get("atr")
+        payload["vwap"] = facts.get("vwap")
         out[symbol] = payload
     return out
 

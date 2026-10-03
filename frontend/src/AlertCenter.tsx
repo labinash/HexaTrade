@@ -129,7 +129,7 @@ export function AlertCenter() {
                 <p className={row.trend === "BEARISH" ? "bearish" : row.trend === "BULLISH" ? "bullish" : "muted"}>
                   {row.trend || "—"} {row.stale ? <span className="warn">delayed data</span> : null}
                 </p>
-                <p>Close {fmt(row.close)} · VWAP {fmt(row.vwap)} · EMA9 {fmt(row.ema9)} · EMA21 {fmt(row.ema21)}</p>
+                <p>Close {fmt(row.close)} · VWAP {fmt(row.vwap)} · EMA20 {fmt(row.ema20)} · EMA9 {fmt(row.ema9)} · EMA21 {fmt(row.ema21)}</p>
                 <p>RSI {fmt(row.rsi)} · ATR {fmt(row.atr)} · Vol {fmt(row.volume)}</p>
                 <p>CE {row.ce ? `${fmt(row.ce.strike)} ${fmt(row.ce.score_percent)}%` : "WAIT"} · PE {row.pe ? `${fmt(row.pe.strike)} ${fmt(row.pe.score_percent)}%` : "WAIT"}</p>
               </div>

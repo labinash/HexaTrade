@@ -30,6 +30,7 @@ from app.domain.alert_engine import (
 )
 from app.domain.alert_indicators import ema_pair, supertrend_side, swing_support_resistance
 from app.domain.dashboard_brief import implied_market_direction
+from app.domain.market_facts import market_facts_from_bars
 from app.services.mapping import jsonable
 
 log = logging.getLogger("hextrade.alerts")
@@ -264,6 +265,18 @@ def _evaluate_symbol(runtime, db, view: dict, config: AlertConfig) -> None:
     bars = load_bars(db, int(future.instrument_token), interval) if future else []
     closes = [bar.close for bar in bars]
     ema9, ema21 = ema_pair(closes) if closes else (None, None)
+    shared = (
+        market_facts_from_bars(
+            bars,
+            ema_period=params.ema_period if params else 20,
+            rsi_period=params.rsi_period if params else 14,
+            atr_period=params.atr_period if params else 14,
+            volume_ema_period=params.volume_ema_period if params else 20,
+            timeframe=interval,
+        )
+        if bars
+        else None
+    )
     trend = view.get("displayed_direction") or implied_market_direction(
         close=evaluation.close if evaluation else None,
         ema=evaluation.ema if evaluation else None,
@@ -285,16 +298,16 @@ def _evaluate_symbol(runtime, db, view: dict, config: AlertConfig) -> None:
         instrument=symbol,
         clock=clock,
         stale=bool(view.get("stale")),
-        close=evaluation.close if evaluation else view.get("futures_ltp") or view.get("ltp"),
-        vwap=evaluation.vwap if evaluation else view.get("vwap"),
-        ema20=evaluation.ema if evaluation else view.get("ema"),
+        close=(shared.close if shared and shared.close is not None else (evaluation.close if evaluation else view.get("futures_ltp") or view.get("ltp"))),
+        vwap=(shared.vwap if shared and shared.vwap is not None else (evaluation.vwap if evaluation else view.get("vwap"))),
+        ema20=(shared.ema20 if shared and shared.ema20 is not None else (evaluation.ema if evaluation else view.get("ema"))),
         ema9=ema9,
         ema21=ema21,
-        rsi=evaluation.rsi if evaluation else view.get("rsi"),
-        atr=evaluation.atr if evaluation else view.get("atr"),
+        rsi=(shared.rsi if shared and shared.rsi is not None else (evaluation.rsi if evaluation else view.get("rsi"))),
+        atr=(shared.atr if shared and shared.atr is not None else (evaluation.atr if evaluation else view.get("atr"))),
         atr_threshold=float(profile.atr_threshold) if profile and profile.atr_threshold is not None else None,
-        volume=evaluation.volume if evaluation else view.get("volume"),
-        volume_ema=evaluation.volume_ema if evaluation else view.get("volume_ema"),
+        volume=(shared.volume if shared and shared.volume is not None else (evaluation.volume if evaluation else view.get("volume"))),
+        volume_ema=(shared.volume_ema if shared and shared.volume_ema is not None else (evaluation.volume_ema if evaluation else view.get("volume_ema"))),
         momentum=evaluation.momentum if evaluation else None,
         trend=trend,
         supertrend=supertrend_side(bars, params.atr_period if params else 14, config.supertrend_atr_mult) if bars else None,
@@ -456,19 +469,31 @@ def _live_snapshot(db, runtime, view, config: AlertConfig) -> dict:
     interval = INTERVALS.get(params.timeframe_minutes, "minute") if params else "minute"
     bars = load_bars(db, int(future.instrument_token), interval) if future else []
     ema9, ema21 = ema_pair([bar.close for bar in bars]) if bars else (None, None)
+    shared = (
+        market_facts_from_bars(
+            bars,
+            ema_period=params.ema_period if params else 20,
+            rsi_period=params.rsi_period if params else 14,
+            atr_period=params.atr_period if params else 14,
+            volume_ema_period=params.volume_ema_period if params else 20,
+            timeframe=interval,
+        )
+        if bars
+        else None
+    )
     packs = view.get("candidates") or {}
     return {
         "instrument": view.get("symbol"),
         "trend": view.get("displayed_direction"),
         "stale": bool(view.get("stale")),
-        "close": evaluation.close if evaluation else view.get("futures_ltp"),
-        "vwap": evaluation.vwap if evaluation else view.get("vwap"),
+        "close": shared.close if shared and shared.close is not None else (evaluation.close if evaluation else view.get("futures_ltp")),
+        "vwap": shared.vwap if shared and shared.vwap is not None else (evaluation.vwap if evaluation else view.get("vwap")),
         "ema9": ema9,
         "ema21": ema21,
-        "ema20": evaluation.ema if evaluation else view.get("ema"),
-        "rsi": evaluation.rsi if evaluation else view.get("rsi"),
-        "atr": evaluation.atr if evaluation else view.get("atr"),
-        "volume": evaluation.volume if evaluation else view.get("volume"),
+        "ema20": shared.ema20 if shared and shared.ema20 is not None else (evaluation.ema if evaluation else view.get("ema")),
+        "rsi": shared.rsi if shared and shared.rsi is not None else (evaluation.rsi if evaluation else view.get("rsi")),
+        "atr": shared.atr if shared and shared.atr is not None else (evaluation.atr if evaluation else view.get("atr")),
+        "volume": shared.volume if shared and shared.volume is not None else (evaluation.volume if evaluation else view.get("volume")),
         "ce": packs.get("ce"),
         "pe": packs.get("pe"),
         "threshold": config.min_confidence,

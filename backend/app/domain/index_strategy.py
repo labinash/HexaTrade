@@ -13,7 +13,8 @@ from app.domain.index_exits import (
     evaluate_index_exit,
     structural_levels,
 )
-from app.domain.indicators import adx, atr, ema, median, rsi, session_vwap
+from app.domain.indicators import adx, atr, ema, median
+from app.domain.market_facts import market_facts_from_bars
 from app.domain.paper_auto import PNL_FORMULA, futures_gross, futures_net, slippage_cost
 
 
@@ -424,19 +425,19 @@ def features_from_bars(bars, config: IndexStrategyConfig, *, tape: str | None = 
     closes = [float(bar.close) for bar in bars]
     highs = [float(bar.high) for bar in bars]
     lows = [float(bar.low) for bar in bars]
-    volumes = [float(bar.volume or 0) for bar in bars]
     last = bars[-1]
-    ema_series = ema(closes, config.ema_period)
+    shared = market_facts_from_bars(
+        bars,
+        ema_period=config.ema_period,
+        rsi_period=config.rsi_period,
+        atr_period=config.atr_period,
+        volume_ema_period=config.volume_ema_period,
+    )
     ema9 = ema(closes, 9)
-    vol_ema = ema(volumes, config.volume_ema_period)
-    rsi_series = rsi(closes, config.rsi_period)
     atr_series = atr(highs, lows, closes, config.atr_period)
     adx_series = adx(highs, lows, closes, int(config.adx_period or 14))
-    typical = [(bar.high + bar.low + bar.close) / 3 for bar in bars]
-    keys = [to_ist(bar.start).date() for bar in bars]
-    vwap_series = session_vwap(typical, volumes, keys)
-    close = closes[-1]
-    ema_now = ema_series[-1]
+    close = shared.close
+    ema_now = shared.ema20
     prior = closes[-2] if len(closes) > 1 else None
     momentum = (close - prior) if prior is not None else None
     momentum_3 = (close - closes[-4]) if len(closes) >= 4 else None
@@ -446,28 +447,28 @@ def features_from_bars(bars, config: IndexStrategyConfig, *, tape: str | None = 
     lookback = max(2, int(config.breakout_lookback))
     prior_high = max(highs[-lookback - 1 : -1]) if len(highs) > lookback else (max(highs[:-1]) if len(highs) > 1 else None)
     prior_low = min(lows[-lookback - 1 : -1]) if len(lows) > lookback else (min(lows[:-1]) if len(lows) > 1 else None)
-    implied = tape or implied_market_direction(close=close, ema=ema_now, vwap=vwap_series[-1], momentum=momentum)
-    vol_now = volumes[-1]
-    vol_base = vol_ema[-1]
-    rel_volume = (vol_now / vol_base) if vol_base else None
+    implied = tape or implied_market_direction(close=close, ema=ema_now, vwap=shared.vwap, momentum=momentum)
+    vol_now = shared.volume
+    vol_base = shared.volume_ema
+    rel_volume = (vol_now / vol_base) if vol_now is not None and vol_base else None
     tod_median = _tod_atr_median(bars, atr_series, last.start, int(config.atr_median_days or 20))
     extras = dict(extras or {})
     return {
         "close": close,
         "high": highs[-1],
         "low": lows[-1],
-        "open": float(last.open),
+        "open": shared.open,
         "volume": vol_now,
         "ema": ema_now,
         "ema9": ema9_now,
         "ema9_slope": ema9_slope,
         "volume_ema": vol_base,
         "rel_volume": rel_volume,
-        "rsi": rsi_series[-1],
-        "atr": atr_series[-1],
+        "rsi": shared.rsi,
+        "atr": shared.atr,
         "adx": adx_series[-1],
         "atr_tod_median": tod_median,
-        "vwap": vwap_series[-1],
+        "vwap": shared.vwap,
         "momentum": momentum,
         "momentum_3": momentum_3,
         "prior_high": prior_high,
