@@ -889,7 +889,7 @@ def index_quotes(db: Session, runtime) -> dict:
 
 def live_index_decisions(db: Session, runtime, config: PaperAutoConfig) -> dict:
     from app.adapters.kite.instruments import front_future
-    from app.domain.index_strategy import config_from_dict, decide, features_from_bars
+    from app.domain.index_strategy import config_from_dict, decide, features_from_bars, is_index_expiry, live_index_display_ok
 
     cfg = config_from_dict(config.index_strategy)
     out = {}
@@ -916,6 +916,16 @@ def live_index_decisions(db: Session, runtime, config: PaperAutoConfig) -> dict:
         verdict = decide(features_from_bars(bars, cfg, tape=tape), cfg)
         payload = verdict.as_dict()
         last = bars[-1]
+        now = now_ist()
+        allowed, why = live_index_display_ok(
+            now,
+            last.start,
+            cfg,
+            is_expiry=is_index_expiry(symbol, now.date()),
+        )
+        if not allowed:
+            payload["decision"] = "HOLD"
+            payload["reason"] = why
         payload["stale"] = False
         payload["timeframe"] = f"{INDEX_PAPER_MINUTES}m"
         payload["walk_minutes"] = INDEX_PAPER_MINUTES

@@ -332,6 +332,29 @@ def validate_index_entry(
     return True, ""
 
 
+def live_index_display_ok(now, last_bar_start, config: IndexStrategyConfig, is_expiry: bool = False) -> tuple[bool, str]:
+    """Wall-clock gate for the live Paper decision. Weekends, holidays, and off-hours are HOLD."""
+    local = to_ist(now)
+    if last_bar_start is not None:
+        try:
+            bar_day = to_ist(last_bar_start).date()
+        except Exception:
+            bar_day = None
+        if bar_day is not None and bar_day != local.date():
+            return False, f"No session today. Last closed bar is {bar_day.isoformat()}."
+    if local.weekday() >= 5:
+        return False, "Weekend. Index BUY/SELL is not live."
+    return validate_index_entry(
+        side="BUY",
+        clock=local.time().replace(second=0, microsecond=0),
+        config=config,
+        day_trades=0,
+        day_pnl=0,
+        stopped_today=False,
+        is_expiry=is_expiry,
+    )
+
+
 @dataclass
 class ConditionScore:
     name: str

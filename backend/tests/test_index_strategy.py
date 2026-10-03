@@ -317,6 +317,28 @@ def test_entry_validation_rules_are_documented():
     assert "gate" in text.lower()
 
 
+def test_live_index_display_holds_on_weekend_and_stale_session():
+    from datetime import date, datetime, time
+
+    from app.core.clock import IST
+    from app.domain.index_strategy import config_from_dict, live_index_display_ok
+
+    cfg = config_from_dict({})
+    saturday = datetime(2026, 10, 3, 11, 0, tzinfo=IST)
+    friday_bar = datetime(2026, 10, 2, 10, 30, tzinfo=IST)
+    ok, reason = live_index_display_ok(saturday, friday_bar, cfg)
+    assert ok is False
+    assert "session" in reason.lower() or "weekend" in reason.lower()
+    weekday_open = datetime(2026, 10, 1, 11, 0, tzinfo=IST)
+    same_day_bar = datetime(2026, 10, 1, 10, 57, tzinfo=IST)
+    ok, _ = live_index_display_ok(weekday_open, same_day_bar, cfg)
+    assert ok is True
+    after_hours = datetime(2026, 10, 1, 15, 20, tzinfo=IST)
+    ok, reason = live_index_display_ok(after_hours, same_day_bar, cfg)
+    assert ok is False
+    assert "window" in reason.lower()
+
+
 def test_nifty_weekly_expiry_switches_tuesday_from_sept_2025():
     from datetime import date
 
