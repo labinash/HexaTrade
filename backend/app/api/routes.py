@@ -15,7 +15,6 @@ from app.adapters.kite.auth import (
     session_status,
     store_session,
 )
-from app.adapters.kite.instruments import expiries as list_expiries
 from app.adapters.kite.instruments import refresh_instruments
 from app.core.clock import now_utc, reference_aligned
 from app.core.config import get_settings
@@ -24,11 +23,9 @@ from app.db.bootstrap import clone_version, latest_version, params_for
 from app.db.models import (
     AppSetting,
     AuditEvent,
-    BacktestRun,
     OrderRecord,
     Position,
     StrategyParameters,
-    StrikeSelectionRun,
     UnderlyingProfile,
 )
 from app.db.session import session_factory
@@ -37,16 +34,10 @@ from app.services.engine import (
     _exit_position_if_needed,
     audit,
     dashboard,
-    execute_backtest,
-    ingest_history,
-    market_view,
     public_chain,
     ticker_view,
 )
 from app.services.mapping import assign, jsonable
-from app.services.oi_scanner import CONFIG_FIELDS as OI_CONFIG_FIELDS
-from app.services.oi_scanner import config_payload as oi_config_payload
-from app.services.oi_scanner import config_row as oi_config_row
 from app.services.oi_scanner import scan as scan_oi
 from app.services.selection import CONFIG_FIELDS as SELECTION_FIELDS
 from app.services.selection import config_payload as selection_config_payload
@@ -299,35 +290,6 @@ def broker_logout(request: Request, db: Session = Depends(get_db)):
     return {"status": "disconnected"}
 
 
-class BrokerSettingsBody(BaseModel):
-    product: str | None = None
-    order_type: str | None = None
-    lots: int | None = None
-    slippage_points: float | None = None
-    brokerage_per_order: float | None = None
-    statutory_charge_bps: float | None = None
-    strikes_above: int | None = None
-    strikes_below: int | None = None
-    mis_cutoff: str | None = None
-
-
-@router.get("/settings/broker")
-def get_broker_settings(request: Request, db: Session = Depends(get_db)):
-    require_db(request)
-    return _time_fields(db.get(AppSetting, 1))
-
-
-@router.put("/settings/broker")
-def put_broker_settings(body: BrokerSettingsBody, request: Request, db: Session = Depends(get_db)):
-    require_db(request)
-    setting = db.get(AppSetting, 1)
-    data = _apply_times(body.model_dump(exclude_none=True), {"mis_cutoff"})
-    if data.get("order_type") == "MARKET":
-        raise HTTPException(status_code=400, detail="MARKET orders stay off until a non-zero protection field exists")
-    assign(setting, data, set(data))
-    return _time_fields(setting)
-
-
 @router.post("/instruments/refresh")
 def refresh(request: Request, db: Session = Depends(get_db)):
     runtime = require_db(request)
@@ -339,12 +301,6 @@ def refresh(request: Request, db: Session = Depends(get_db)):
     count = refresh_instruments(db, kite_client(get_settings(), token))
     runtime.instruments_ready = True
     return {"stored": count}
-
-
-@router.get("/underlyings/{symbol}/expiries")
-def expiries(symbol: str, request: Request, db: Session = Depends(get_db)):
-    require_db(request)
-    return {"expiries": [item.isoformat() for item in list_expiries(db, symbol.upper())]}
 
 
 @router.get("/chain")
@@ -359,18 +315,6 @@ def chain(
     runtime = require_db(request)
     expiry_date = datetime.fromisoformat(expiry).date() if expiry else None
     return public_chain(db, runtime, underlying.upper(), expiry_date, strikes_above, strikes_below)
-
-
-@router.get("/indicators")
-def indicators(underlying: str, request: Request, db: Session = Depends(get_db)):
-    runtime = require_db(request)
-    view = market_view(db, runtime, underlying.upper())
-    view.pop("evaluation", None)
-    view.pop("params", None)
-    view.pop("profile", None)
-    view.pop("future", None)
-    view.pop("spot", None)
-    return view
 
 
 @router.get("/dashboard")
@@ -617,32 +561,6 @@ def oi_scanner(
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
-@router.get("/oi-scanner/config")
-def get_oi_config(request: Request, db: Session = Depends(get_db)):
-    require_db(request)
-    return {
-        row.symbol: oi_config_payload(db, row.symbol)
-        for row in db.scalars(select(UnderlyingProfile)).all()
-    }
-
-
-@router.put("/oi-scanner/config")
-def put_oi_config(body: dict, request: Request, db: Session = Depends(get_db)):
-    require_db(request)
-    symbol = str(body.pop("underlying", "")).upper()
-    body.pop("snapshot_interval_seconds", None)
-    row = oi_config_row(db, symbol)
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"{symbol or 'underlying'} is not configured")
-    if body.get("interval_minutes") is not None and int(body["interval_minutes"]) < 1:
-        raise HTTPException(status_code=400, detail="interval_minutes must be at least 1")
-    if body.get("option_type") and str(body["option_type"]).upper() not in {"ALL", "CE", "PE"}:
-        raise HTTPException(status_code=400, detail="option_type must be ALL, CE or PE")
-    assign(row, _apply_times(body, {"reference_time"}), OI_CONFIG_FIELDS)
-    audit(db, "OI_SCANNER_CONFIG_UPDATED", underlying=symbol, reason=", ".join(sorted(body)))
-    return oi_config_payload(db, symbol)
-
-
 @router.get("/strike-selection")
 def strike_selection(
     request: Request,
@@ -735,59 +653,6 @@ def selection_paper_trade(body: PaperTradeBody, request: Request, db: Session = 
         "target": jsonable(position.target),
         "quantity": position.quantity,
     }
-
-
-@router.get("/strike-selection/runs")
-def strike_selection_runs(request: Request, underlying: str | None = None, db: Session = Depends(get_db)):
-    require_db(request)
-    query = select(StrikeSelectionRun).order_by(StrikeSelectionRun.id.desc()).limit(50)
-    if underlying:
-        query = query.where(StrikeSelectionRun.underlying == underlying.upper())
-    rows = db.scalars(query).all()
-    return [
-        {
-            "id": row.id,
-            "created_at": jsonable(row.created_at),
-            "underlying": row.underlying,
-            "direction": row.direction,
-            "option_type": row.option_type,
-            "atm": jsonable(row.atm),
-            "available": row.available,
-            "selected_symbol": row.selected_symbol,
-            "selected_score": jsonable(row.selected_score),
-            "candidate_count": row.candidate_count,
-            "passed_count": row.passed_count,
-            "no_trade_reasons": row.no_trade_reasons,
-        }
-        for row in rows
-    ]
-
-
-@router.get("/signals/current")
-def current_signal(request: Request, underlying: str = "NIFTY", db: Session = Depends(get_db)):
-    runtime = require_db(request)
-    view = market_view(db, runtime, underlying.upper())
-    return {"symbol": underlying.upper(), "signal": view.get("signal"), "failed": view.get("failed"), "conditions": view.get("conditions")}
-
-
-@router.get("/signals")
-def signals(request: Request, db: Session = Depends(get_db)):
-    require_db(request)
-    from app.db.models import Signal
-
-    rows = db.scalars(select(Signal).order_by(Signal.id.desc()).limit(50)).all()
-    return [
-        {
-            "id": row.id,
-            "underlying": row.underlying,
-            "created_at": jsonable(row.created_at),
-            "direction": row.direction,
-            "passed": row.passed,
-            "actionable": row.actionable,
-            "failed_reasons": row.failed_reasons,
-        }
-        for row in rows
-    ]
 
 
 class ModeBody(BaseModel):
@@ -966,47 +831,6 @@ def audit_log(request: Request, event_type: str | None = None, db: Session = Dep
     ]
 
 
-class BacktestBody(BaseModel):
-    underlying: str = "NIFTY"
-    date_from: datetime
-    date_to: datetime
-    slippage_points: float = 0.5
-    brokerage_per_order: float = 20
-    statutory_charge_bps: float = 0
-
-
-@router.post("/backtests")
-def create_backtest(body: BacktestBody, request: Request, db: Session = Depends(get_db)):
-    require_db(request)
-    result = execute_backtest(
-        db,
-        body.underlying.upper(),
-        body.date_from,
-        body.date_to,
-        body.slippage_points,
-        body.brokerage_per_order,
-        body.statutory_charge_bps,
-    )
-    if result.get("error"):
-        raise HTTPException(status_code=400, detail=result["error"])
-    return result
-
-
-@router.get("/backtests/{run_id}")
-def get_backtest(run_id: int, request: Request, db: Session = Depends(get_db)):
-    require_db(request)
-    row = db.get(BacktestRun, run_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="Backtest not found")
-    return _time_fields(row)
-
-
-@router.post("/backtests/ingest")
-def ingest(body: BacktestBody, request: Request, db: Session = Depends(get_db)):
-    runtime = require_db(request)
-    return ingest_history(db, runtime, body.underlying.upper(), body.date_from, body.date_to, "minute")
-
-
 @router.get("/paper-trading")
 def paper_trading(request: Request, db: Session = Depends(get_db)):
     runtime = require_db(request)
@@ -1105,14 +929,6 @@ def get_alerts(request: Request, db: Session = Depends(get_db)):
     from app.services.alert_engine import workspace
 
     return workspace(db)
-
-
-@router.get("/alerts/settings")
-def get_alert_settings(request: Request, db: Session = Depends(get_db)):
-    require_db(request)
-    from app.services.alert_engine import config_dict, load_config
-
-    return config_dict(load_config(db))
 
 
 @router.put("/alerts/settings")

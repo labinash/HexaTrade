@@ -23,7 +23,7 @@ const navGroups: { title: string; items: [string, string][] }[] = [
   { title: "Monitor", items: [["/", "Dashboard"], ["/chart", "Chart"], ["/alerts", "Alerts"]] },
   { title: "Trade", items: [["/paper", "Paper"], ["/chain", "Option chain"]] },
   { title: "Research", items: [["/calendar-patterns", "Calendar patterns"], ["/historical-data", "Historical Data"]] },
-  { title: "Settings", items: [["/strategy", "Strategy"], ["/strike-selection", "Strike engine"], ["/broker", "Broker"]] },
+  { title: "Settings", items: [["/strategy", "Strategy"], ["/strike-selection", "Strike engine"], ["/broker", "Broker"], ["/audit", "Audit"]] },
 ];
 
 export function App() {
@@ -45,7 +45,6 @@ export function App() {
                 ))}
               </div>
             ))}
-            <NavLink to="/audit" className="nav-audit">Audit</NavLink>
           </nav>
           <main>
             <Routes>
@@ -411,40 +410,6 @@ function ActivePaperPositions({ positions }: { positions: any[] }) {
               <td>₹{fmt(row.stop_loss)}</td>
               <td>₹{fmt(row.target)}</td>
               <td><button onClick={() => exit(row.id)}>Exit</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
-  );
-}
-
-function ExitAlerts({ alerts }: { alerts: any[] }) {
-  const active = alerts.filter((row) => row.reason || row.trail_armed);
-  if (!active.length) return null;
-  return (
-    <>
-      <h2>Exit alerts</h2>
-      <p className="muted">These watch persisted entry premiums. They do not place or change live orders.</p>
-      <table>
-        <thead>
-          <tr>
-            <th className="left">Contract</th><th>Side</th><th>Entry</th><th>Premium</th><th>EMA20</th>
-            <th>Stop</th><th>Target</th><th>Trail</th><th className="left">Alert</th>
-          </tr>
-        </thead>
-        <tbody>
-          {active.map((row) => (
-            <tr key={row.position_id}>
-              <td className="left">{row.symbol}</td>
-              <td>{row.option_type}</td>
-              <td>{fmt(row.entry_price)}</td>
-              <td>{fmt(row.premium)}</td>
-              <td>{fmt(row.premium_ema20)}</td>
-              <td>{fmt(row.stop_loss)}</td>
-              <td>{fmt(row.target)}</td>
-              <td>{row.trail_armed ? fmt(row.trail_price) : "not armed"}</td>
-              <td className="left">{row.reason || row.message}</td>
             </tr>
           ))}
         </tbody>
