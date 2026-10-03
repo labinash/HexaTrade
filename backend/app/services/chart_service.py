@@ -61,7 +61,7 @@ HISTORICAL_REPLAY = "HISTORICAL_REPLAY"
 HISTORICAL_MODES = {HISTORICAL, HISTORICAL_ANALYSIS, HISTORICAL_REPLAY, "HISTORICAL"}
 RANGE_BARS = {"1D": 1, "5D": 5, "1M": 22}
 MAX_SPAN_DAYS = 31
-CALC_VERSION = "chart-historical-v9"
+CALC_VERSION = "chart-historical-v10"
 log = logging.getLogger("hextrade.chart")
 _PAYLOAD_CACHE: dict[str, tuple[float, dict]] = {}
 _CACHE_TTL = 45.0
@@ -146,21 +146,6 @@ def chart_payload(
     bars = _load_bars(db, runtime, symbol, live_interval, source_tf, mode_key, start, end, range_key, resample_minutes)
     candles, indicators = series_from_bars(bars, params)
     if mode_key in HISTORICAL_MODES:
-        in_range = [row for row in candles if _ist_in_range(row.get("ist"), start, end)]
-        if not in_range and start == end:
-            prior = sorted(
-                {
-                    date.fromisoformat(str(row.get("ist"))[:10])
-                    for row in candles
-                    if row.get("ist") and date.fromisoformat(str(row.get("ist"))[:10]) <= end
-                }
-            )
-            if prior:
-                snapped = prior[-1]
-                date_warnings.append(
-                    f"{start.isoformat()} has no {symbol} index session (weekend or holiday). Showing {snapped.isoformat()}."
-                )
-                start = end = snapped
         candles = [row for row in candles if _ist_in_range(row.get("ist"), start, end)]
         indicators = {
             key: [row for row in series if _unix_in_range(row.get("time"), start, end)]
@@ -177,11 +162,16 @@ def chart_payload(
         from app.services.engine import market_view
 
         view = market_view(db, runtime, symbol)
+        if not candles:
+            data_status = "NO_SESSION"
+            date_warnings.append(
+                f"{start.isoformat()} has no live {symbol} session candles (market closed, weekend, or holiday)."
+            )
     warnings = list(date_warnings)
     option_available = True
     if mode_key in HISTORICAL_MODES:
         option_available = option_rows_exist(db, symbol, "1Minute", start, end)
-        if not option_available:
+        if not option_available and candles:
             warnings.append(
                 "Option history unavailable for this period. Index close is being used as the futures proxy."
             )
@@ -192,7 +182,7 @@ def chart_payload(
         days = {to_ist(bar.start).date() for bar in bars if start <= to_ist(bar.start).date() <= end}
         expected = len(days) * expected_session_bars(session_start, session_end, hist_tf)
         if stored == 0:
-            data_status = "NO_DATA"
+            data_status = "NO_SESSION" if start == end else "NO_DATA"
             archive_total = count_candles_in_range(db, symbol, source_tf, date(1990, 1, 1), date(2100, 1, 1))
             live_n = _live_candle_count(db, symbol)
             if archive_total == 0:
@@ -200,6 +190,10 @@ def chart_payload(
                     f"The historical archive has 0 {symbol} index rows. "
                     f"LIVE PAPER currently has {live_n} live candles; replay will not use them. "
                     "Open Historical Data, connect Zerodha, start an INITIAL import, and wait until the job is COMPLETED."
+                )
+            elif start == end:
+                warnings.append(
+                    f"{start.isoformat()} has no {symbol} index session (weekend, holiday, or not stored)."
                 )
             else:
                 warnings.append(
@@ -1138,14 +1132,22 @@ def _resolve_dates(trading_date, start_date, end_date, cover: tuple[date, date] 
     if (end - start).days + 1 > MAX_SPAN_DAYS:
         end = start + timedelta(days=MAX_SPAN_DAYS - 1)
         warnings.append(f"Range capped at {MAX_SPAN_DAYS} days so the browser does not load the full archive.")
-    if cover and mode in HISTORICAL_MODES:
+    if cover and mode in HISTORICAL_MODES and start != end:
         first, last = cover
         if start < first or end > last or start > last or end < first:
-            warnings.append(f"Selected dates were clamped to stored Asia/Kolkata data ({first.isoformat()} → {last.isoformat()}).")
+            warnings.append(
+                f"Selected range is outside stored Asia/Kolkata data ({first.isoformat()} → {last.isoformat()})."
+            )
         start = min(max(start, first), last)
         end = min(max(end, first), last)
         if end < start:
             end = start
+    elif cover and mode in HISTORICAL_MODES and start == end:
+        first, last = cover
+        if start < first or start > last:
+            warnings.append(
+                f"{start.isoformat()} is outside stored Asia/Kolkata data ({first.isoformat()} → {last.isoformat()})."
+            )
     return start, end, warnings
 
 

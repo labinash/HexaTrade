@@ -107,6 +107,14 @@ def test_historical_dates_use_ist_store_and_cap_span():
     assert live_start == now_ist().date()
 
 
+def test_single_day_outside_archive_is_not_clamped_to_last_session():
+    first, last = date(2023, 10, 3), date(2026, 10, 1)
+    start, end, warnings = _resolve_dates(None, "2026-10-03", "2026-10-03", (first, last), HISTORICAL_ANALYSIS)
+    assert start == date(2026, 10, 3)
+    assert end == date(2026, 10, 3)
+    assert any("outside stored" in row for row in warnings)
+
+
 def test_ist_candle_filter_does_not_use_browser_timezone():
     assert _ist_in_range("2026-07-15 09:20:00", date(2026, 7, 15), date(2026, 7, 15)) is True
     assert _ist_in_range("2026-07-16 09:20:00", date(2026, 7, 15), date(2026, 7, 15)) is False

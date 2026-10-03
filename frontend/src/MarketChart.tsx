@@ -485,6 +485,7 @@ export function MarketChart() {
           ) : null}
           {!historical ? <ChartStrikeTrade instrument={instrument} enabled={!historical} /> : null}
           {!loading && historical && chart?.data_status === "NO_DATA" ? <p className="warn">No historical data found for the selected period.</p> : null}
+          {!loading && chart?.data_status === "NO_SESSION" ? <p className="warn">No session. The selected date is a weekend, holiday, or has no stored candles. Nothing is invented.</p> : null}
           {!loading && !noStrategy && candles.length > 0 && signals.length === 0 ? <p className="muted">No signals generated for the selected period.</p> : null}
           {!loading && start && end && start > end ? <p className="error">Invalid date range.</p> : null}
           <ChartCanvas
