@@ -1,0 +1,12 @@
+{
+  "name": "hextrade",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:raw": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "install:web": "npm --prefix frontend install",
+    "api": "cd backend && \"%LOCALAPPDATA%\\Programs\\Python\\Python312\\python.exe\" -m uvicorn app.main:app --host 127.0.0.1 --port 8000",
+    "test": "cd backend && \"%LOCALAPPDATA%\\Programs\\Python\\Python312\\python.exe\" -m pytest tests -q"
+  }
+}

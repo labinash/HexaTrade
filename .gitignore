@@ -1,0 +1,14 @@
+.env
+.masterkey
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+*.log
+.idea/
+.vscode/
