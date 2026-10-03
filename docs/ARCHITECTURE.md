@@ -1,6 +1,6 @@
 # HexTrade architecture (as built)
 
-Read-only snapshot. Saturday 2026-10-03.
+Updated after `refactor/screens`. Saturday 2026-10-03 evening.
 
 Stack: FastAPI + SQLAlchemy 2 + SQL Server (`localhost\SQLEXPRESS`) on `:8000`. React 18 + Vite on `:5999`. Redis optional (currently **down**). Timezone intended: Asia/Kolkata.
 
@@ -10,24 +10,17 @@ Stack: FastAPI + SQLAlchemy 2 + SQL Server (`localhost\SQLEXPRESS`) on `:8000`. 
 
 ```mermaid
 flowchart LR
-  subgraph UI["Frontend screens"]
+  subgraph UI["Frontend hubs"]
     DASH[Dashboard]
     CAL[Calendar patterns]
     CHT[Chart]
     AL[Alerts]
-    PAP[Paper Trading]
+    PAP[Paper Today Backdated Positions]
     HD[Historical Data]
-    BD[Backdated Paper]
-    CHN[Option chain]
-    OI[OI Scanner]
-    SS[Strike selection]
-    SSC[Strike selection config]
-    ST[Strategy]
-    OS[Option selection]
-    EX[Exits]
-    RK[Risk]
+    CHN[Chain Ladder plus OI]
+    SS[Strike Run plus Config]
+    ST[Strategy Conditions Option Exits Risk]
     BR[Broker]
-    POS[Positions]
     AUD[Audit]
   end
 
@@ -44,6 +37,7 @@ flowchart LR
     OIS[oi_scanner]
     SEL[selection + strike_selection]
     MAP[strategy mapping]
+    FACTS[market_facts]
     KITE[Kite adapter]
   end
 
@@ -69,23 +63,24 @@ flowchart LR
   DASH --> ENG
   DASH --> OBUY
   DASH --> CTRD
+  ENG --> FACTS
+  OBUY --> FACTS
+  CSVC --> FACTS
+  PENG --> FACTS
+  AENG --> FACTS
   CAL --> HIMP
   CHT --> CSVC
   CHT --> CTRD
   AL --> AENG
   PAP --> PENG
+  PAP --> HBT
+  PAP --> ENG
   HD --> HIMP
-  BD --> HBT
   CHN --> CHAIN
-  OI --> OIS
+  CHN --> OIS
   SS --> SEL
-  SSC --> SEL
   ST --> MAP
-  OS --> MAP
-  EX --> MAP
-  RK --> MAP
   BR --> KITE
-  POS --> ENG
   AUD --> ENG
 
   ENG --> CANDLE
@@ -125,7 +120,7 @@ flowchart TB
   KITE2[Kite websocket / polling] --> CANDLE[(candle)]
   MHD --> CHT[Chart HISTORICAL_*]
   MHD --> CAL[Calendar]
-  MHD --> BD[Backdated Paper]
+  MHD --> BD[Paper Backdated tab]
   CANDLE --> DASH[Dashboard / market_view]
   CANDLE --> LIVE[Chart LIVE_PAPER]
   CANDLE --> PAP[Paper live_decisions]
@@ -142,8 +137,9 @@ Intended product story:
 
 ```mermaid
 flowchart TD
-  C[Candles IST 09:15-15:30] --> I[indicators.py EMA VWAP RSI ATR ADX]
-  I --> G[Gates + scores]
+  C[Candles IST 09:15-15:30] --> I[indicators.py]
+  I --> F[market_facts last bar]
+  F --> G[Gates + scores]
   G --> A[Alert]
   A --> P[Paper trade]
   P --> X[Exit]
@@ -155,7 +151,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   subgraph Live1m["Path A — Dashboard / original engine"]
-    C1[live candle 1m] --> I1[indicators.py]
+    C1[live candle 1m] --> I1[market_facts + indicators.py]
     I1 --> S9[strategy.evaluate_snapshot 9 conditions]
     S9 --> OB[option_buy CE/PE 9 checks]
     OB --> PRES[dashboard_brief presentation]
@@ -167,7 +163,7 @@ flowchart TD
   end
 
   subgraph Live3m["Path B — Paper index + Chart markers"]
-    C2[live or archive 3m] --> I2[indicators.py]
+    C2[live or archive 3m] --> I2[market_facts + features_from_bars]
     I2 --> IDX[index_strategy.score_side / decide]
     IDX --> UI2[Paper live_decisions / Chart markers]
     IDX --> PT[(paper_trade INDEX)]
@@ -175,7 +171,7 @@ flowchart TD
   end
 
   subgraph AlertPath["Path C — Alerts"]
-    C3[live candles] --> I3[ema_pair 9/21 + Supertrend]
+    C3[live candles] --> I3[market_facts EMA20 plus ema_pair 9/21 + Supertrend]
     I3 --> AS[alert_engine.score_side]
     AS --> AL[(alert_signal)]
   end
@@ -208,7 +204,7 @@ Nothing in Path C writes a paper trade. Path B does not write Path A `position`.
 | Alert CE/PE weighted score | `alert_engine.score_side` | Alerts only |
 | Strike suitability 0–100 | `strike_selection` weights | Strike selection only |
 
-RSI is one **function** (`indicators.rsi`, Wilder 14) but many **inputs** (1m live vs 3m live vs 3m archive day). Alerts also use EMA9/21, not EMA20.
+RSI is one **function** (`indicators.rsi`, Wilder 14) via `market_facts_from_bars` for the last bar. Inputs still differ by timeframe (1m live vs 3m live vs 3m archive day). Alerts also show EMA9/21. Pin tests lock 2024-06-04 / 2025-08-28 / 2025-09-02 last EMA/RSI/ATR.
 
 ---
 
@@ -237,7 +233,7 @@ flowchart TB
   DASH --> SUM2[historical_paper_performance]
 ```
 
-These four numbers are not reconciled. Verified 2026-10-03: today paper 0; dashboard live-paper −751.28 / 18 trades; hist API run 2 −8021; dashboard hist −9971; positions empty.
+These four numbers are not one ledger (Step 13 skipped). Verified after Step 10: today paper 0; dashboard live-paper −751.28 / 18 trades; hist API run 2 **−8021**; dashboard hist **−8021**; positions empty.
 
 ---
 
@@ -253,7 +249,7 @@ flowchart TD
   ORDER --> AUD[(trading_order_audit)]
 ```
 
-`app_setting.trading_mode` and `chart_live_enabled` are separate latches. Restart is supposed to disarm live; paper mode can still show a live-enable control on Dashboard/Chart.
+`app_setting.trading_mode` and `chart_live_enabled` are separate latches. Only **Broker** can arm live or enable Chart live orders. Restart disarms live.
 
 ---
 
@@ -263,9 +259,9 @@ flowchart TD
 |---|---|
 | Option chain / OI / strike | Listed `instrument.expiry` (live 2026-10-06 Tuesday) |
 | Calendar proximity | Listed `instrument.expiry` years &gt; 1990 |
-| Index paper / backtest square-off | `is_index_expiry()` weekday heuristic, switch **2024-09-01** |
+| Index paper / backtest square-off | `is_index_expiry()` weekday heuristic, switch **2025-09-01**; listed expiries win when passed |
 
-SENSEX heuristic is Friday. NIFTY heuristic does not match the stated Sept 2025 Thursday→Tuesday change.
+SENSEX heuristic is Friday. NIFTY is Thursday until 1 Sept 2025, Tuesday after.
 
 ---
 

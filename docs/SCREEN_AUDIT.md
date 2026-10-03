@@ -1,16 +1,31 @@
 # HexTrade screen audit
 
-Read-only audit. No source was modified. Verification: API on `127.0.0.1:8000` and frontend HTML on `:5999`, Saturday **2026-10-03** (market closed). Browser click-through was not available; each screen was exercised through its HTTP API and by reading the route → component → service path.
+Original read-only pass: Saturday **2026-10-03** morning. Updated after `refactor/screens` the same evening. Verification: API `:8000`, Vite `:5999`. Browser click-through was not available; screens were checked via their HTTP APIs, frontend route load, and `tsc`.
 
-App context checked:
+## Status after refactor/screens
+
+| Claim | Now |
+|---|---|
+| Paper banner on every screen | `PaperBanner` / paper class on Dashboard, Chart, Alerts, Paper tabs, Chain/OI, Strike engine, Strategy pack, Broker, Calendar, Historical Data, Audit. |
+| Live-order rail | Enable + phrase only on **Broker**. Dashboard LiveZerodhaPanel is view/sync. Chart rail hidden unless `chart_live_enabled`. |
+| NIFTY weekly expiry | `is_index_expiry` switches **2025-09-01**. 2025-08-28 Thu True, 2024-09-03 Tue False, 2025-09-02 Tue True. Listed expiries win when present. |
+| Chart weekend/holiday | Single-day 2024-01-26, 2026-10-03, 2024-06-08 → `NO_SESSION`, 0 candles, `date_from` unchanged. 2024-06-04 still 125 bars. |
+| Saturday paper BUY | `live_index_decisions` **HOLD** (“No session today. Last closed bar is 2026-10-01”). |
+| Chain vs OI ATM | Both **22400** (spot helper). OI integers unchanged. |
+| Dashboard hist P&L | **−8021**, label “Historical paper run 2”, matches `GET /api/historical-paper/runs/2`. |
+| Shared indicators | `market_facts_from_bars` feeds Dashboard snapshot, option-buy futures, Paper features, Chart `last_facts`, Alerts EMA20/RSI/ATR. Pin tests on 2024-06-04 / 2025-08-28 / 2025-09-02 still pass. Same TF + same bar: Chart series last point = `last_facts`. Different TFs still disagree (1m live vs 3m live vs 3m archive). |
+| Dead HTTP | Removed unused GET/PUT listed below. `GET /api/alerts/settings` gone (PUT kept → 405 on GET). `signal` rows still written. |
+| Step 13 single ledger | **Skipped** (high-risk, optional). Positions remains its own table. |
+
+App context (evening re-check):
 
 | Claim | Evidence |
 |---|---|
-| Paper/alerts only (banner) | Present on Dashboard, Chart, Alerts, Paper, Calendar, Backdated. **Missing** on Option chain, OI Scanner, Strike selection, Strategy, Option selection, Exits, Risk, Broker, Positions. |
+| Paper/alerts only (banner) | Present on every remaining route. |
 | NIFTY + SENSEX CE/PE | Both underlyings throughout. |
-| Timestamps Asia/Kolkata | Chart candles labelled IST 09:15–15:27 (last 3m bar open). Archive last 1m bar `2026-10-01T15:29:00`. **UTC leakage:** ticker `as_of=2026-10-03 12:31:05+00:00`; alert score `time` is naive UTC (`2026-10-03 12:34:12`). |
-| History 2023-10-03 → 2026-10-01, ~738 sessions | `/api/historical-data` quality: NIFTY 738 / 276429 1m; SENSEX 738 / 276433 1m. |
-| NIFTY weekly expiry Thu before Sept 2025, Tue from Sept 2025 | **Code uses 2024-09-01**, not Sept 2025. See bug H2. |
+| Timestamps Asia/Kolkata | Chart candles labelled IST 09:15–15:27. **UTC leakage remains** on ticker `as_of` and some alert times (M2, not changed). |
+| History 2023-10-03 → 2026-10-01, ~738 sessions | Unchanged. |
+| NIFTY weekly expiry Thu before Sept 2025, Tue from Sept 2025 | Code uses **2025-09-01**. |
 | Index close as futures proxy | Chart/backtest warnings present when option history missing. |
 
 Live process: API `database=up`, Redis **down**, `trading_loop=running`, broker **connected** (`LIH238`), mode **PAPER**, `chart_live_enabled=false`, `session_open=false`.
@@ -19,26 +34,26 @@ Live process: API `database=up`, Redis **down**, `trading_loop=running`, broker 
 
 ## Code map (sidebar order)
 
-| # | Screen | Route | UI files | Services / hooks | APIs | Tables R/W |
+| # | Screen | Route (old → new) | UI files | Services / hooks | APIs | Tables R/W |
 |---|---|---|---|---|---|---|
 | 1 | Dashboard | `/` | `App.tsx` `Dashboard`; `DashboardCard.tsx`; `ChartTradeBrief.tsx`; `LiveZerodhaPanel.tsx`; `OptionTradingPanel.tsx` | `usePoll`; `engine.dashboard`; `option_buy.attach_dashboard_brief`; `chart_trading.dashboard_brief` | `GET /api/dashboard`; `GET /api/dashboard/options/{u}`; `GET /api/trading/dashboard-brief`; `GET /api/trading/zerodha/snapshot`; `POST /api/paper-orders`; `PUT /api/trading/live-settings` | R: `candle`, `underlying_profile`, `strategy*`, `alert_signal`, `position`, `paper_trade`, `market_historical_data`, `app_setting`. W: `position`/`order_record` via paper-orders; `app_setting.chart_live_enabled` |
 | 2 | Calendar patterns | `/calendar-patterns` | `CalendarPatterns.tsx` | `calendar_analyzer`, `calendar_patterns` | `GET /api/calendar-patterns` | R: `market_historical_data`, `instrument` (listed expiries), `historical_paper_trade` (paper-by-weekday) |
 | 3 | Chart | `/chart` | `MarketChart.tsx`; `ChartStrikeTrade.tsx` | `useChartQuery`; `chart_service`; `chart_trading` | `GET /api/chart`; `GET /api/paper-trading/settings`; `GET /api/trading/chart-strikes`; `POST /api/trading/zerodha/preview\|order` | R: `market_historical_data` (hist), `candle` (live), `chart_signal`, `paper_auto_setting`. W: `chart_signal`; **W live Kite** if armed |
 | 4 | Alerts | `/alerts` | `AlertCenter.tsx` | `alert_engine` service + domain | `GET /api/alerts`; `PUT /api/alerts/settings`; `POST /api/alerts/{id}/acknowledge\|dismiss` | R/W: `alert_setting`, `alert_signal`, `alert_log`. R: `historical_paper_trade` (hist alerts) |
-| 5 | Paper Trading | `/paper-trading` | `PaperTrading.tsx`; `IndexStrategyPanel.tsx` | `paper_engine`; `index_strategy`; `index_exits` (manage open INDEX) | `GET/PUT /api/paper-trading*`; `POST /api/paper-trading/index`; `GET /api/historical-paper` | R/W: `paper_auto_setting`, `paper_trade*`, `charge_rate` |
+| 5 | Paper Trading | `/paper-trading` → `/paper?tab=today` | `PaperTrading.tsx`; `IndexStrategyPanel.tsx` | `paper_engine`; `index_strategy`; `index_exits` (manage open INDEX) | `GET/PUT /api/paper-trading*`; `POST /api/paper-trading/index`; `GET /api/historical-paper` | R/W: `paper_auto_setting`, `paper_trade*`, `charge_rate` |
 | 6 | Historical Data | `/historical-data` | `HistoricalData.tsx` | `historical_import`, `historical_repo` | `GET /api/historical-data`; `POST /api/historical-data/import`; job GET/resume | R/W: `market_historical_data`, `historical_import_job`, `historical_import_event` |
-| 7 | Backdated Paper | `/backdated-paper` | `BackdatedPaper.tsx` | `historical_backtest`; `index_strategy`; `index_exits`; `exits.choose_exit` (option path) | `GET /api/historical-paper`; `POST /api/historical-paper/runs`; `GET .../runs/{id}` | R: `market_historical_data`. W: `historical_paper_run`, `historical_paper_trade`, `historical_condition_stat` |
-| 8 | Option chain | `/chain` | `App.tsx` `Chain` | `engine.public_chain` / `chain` | `GET /api/chain` | R: `instrument`, live quote cache, `oi_reference` |
-| 9 | OI Scanner | `/oi-scanner` | `OiScanner.tsx`; `OiControl.tsx`; `oiControlMath.ts` | `oi_scanner` | `GET /api/oi-scanner` | R: `instrument`, quote snapshots, `oi_scanner_config` (API exists; **UI does not call config**) |
-| 10 | Strike selection | `/strike-selection` | `StrikeSelection.tsx` | `selection` + `strike_selection`; `greeks` | `GET /api/strike-selection`; `POST .../paper-trade` | R: `strike_selection_config`, chain, `strategy`. W: `position`, `strike_selection_run`, `strike_selection_candidate` |
-| 11 | Strike selection config | `/strike-selection/config` | `StrikeSelection.tsx` `StrikeSelectionConfig` | same | `GET/PUT /api/strike-selection/config` | R/W: `strike_selection_config` |
-| 12 | Strategy | `/strategy` | `StrategyConfig.tsx` | `mapping` / strategy version | `GET/PUT /api/strategy` | R/W: `strategy`, `strategy_version`, `strategy_parameters` |
-| 13 | Option selection | `/selection` | `App.tsx` `ConfigScreen` | `mapping` | `GET /api/strategy`; `PUT /api/option-selection` | R/W: `option_selection_rule` |
-| 14 | Exits | `/exits` | `App.tsx` `ConfigScreen` | `domain.exits` | `GET /api/strategy`; `PUT /api/exits` | R/W: `exit_policy` |
-| 15 | Risk | `/risk` | `App.tsx` `RiskScreen` | `domain.risk`; ATR on `underlying_profile` | `GET /api/strategy`; `PUT /api/risk` | R/W: `risk_policy`, `underlying_profile.atr_threshold` |
-| 16 | Broker | `/broker` | `App.tsx` `Broker` | Kite adapter; `require_db` | `/api/broker/*`; `/api/trading/mode\|arm\|kill-switch\|resume`; `POST /api/instruments/refresh` | R/W: `broker_session`, `app_setting`, `instrument` |
-| 17 | Positions | `/positions` | `App.tsx` `Positions` | `engine` positions | `GET /api/positions`; `POST /api/positions/{id}/exit`; `GET /api/orders` | R/W: `position`, `order_record`, `fill` |
-| — | Audit (extra) | `/audit` | `App.tsx` `Audit` | — | `GET /api/audit` | R: `audit_event` |
+| 7 | Backdated Paper | `/backdated-paper` → `/paper?tab=backdated` | `BackdatedPaper.tsx` | `historical_backtest`; `index_strategy`; `index_exits`; `exits.choose_exit` (option path) | `GET /api/historical-paper`; `POST /api/historical-paper/runs`; `GET .../runs/{id}` | R: `market_historical_data`. W: `historical_paper_run`, `historical_paper_trade`, `historical_condition_stat` |
+| 8 | Option chain | `/chain` (tab Ladder) | `App.tsx` `Chain` | `engine.public_chain` / `chain` | `GET /api/chain` | R: `instrument`, live quote cache, `oi_reference` |
+| 9 | OI Scanner | `/oi-scanner` → `/chain?tab=oi` | `OiScanner.tsx`; `OiControl.tsx`; `oiControlMath.ts` | `oi_scanner` | `GET /api/oi-scanner` | R: `instrument`, quote snapshots. Config HTTP **removed** (UI was never wired) |
+| 10 | Strike selection | `/strike-selection` (tab Run) | `StrikeSelection.tsx` | `selection` + `strike_selection`; `greeks` | `GET /api/strike-selection`; `POST .../paper-trade` | R: `strike_selection_config`, chain, `strategy`. W: `position`, `strike_selection_run`, `strike_selection_candidate` |
+| 11 | Strike selection config | `/strike-selection/config` → `?tab=config` | `StrikeSelection.tsx` `StrikeSelectionConfig` | same | `GET/PUT /api/strike-selection/config` | R/W: `strike_selection_config` |
+| 12 | Strategy | `/strategy` (tab Conditions) | `StrategyConfig.tsx` | `mapping` / strategy version | `GET/PUT /api/strategy` | R/W: `strategy`, `strategy_version`, `strategy_parameters` |
+| 13 | Option selection | `/selection` → `/strategy?tab=option` | `App.tsx` `ConfigScreen` | `mapping` | `GET /api/strategy`; `PUT /api/option-selection` | R/W: `option_selection_rule` |
+| 14 | Exits | `/exits` → `/strategy?tab=exits` | `App.tsx` `ConfigScreen` | `domain.exits` | `GET /api/strategy`; `PUT /api/exits` | R/W: `exit_policy` |
+| 15 | Risk | `/risk` → `/strategy?tab=risk` | `App.tsx` `RiskScreen` | `domain.risk`; ATR on `underlying_profile` | `GET /api/strategy`; `PUT /api/risk` | R/W: `risk_policy`, `underlying_profile.atr_threshold` |
+| 16 | Broker | `/broker` | `App.tsx` `Broker` | Kite adapter; `require_db` | `/api/broker/*`; `/api/trading/mode\|arm\|kill-switch\|resume`; `PUT /api/trading/live-settings`; `POST /api/instruments/refresh` | R/W: `broker_session`, `app_setting`, `instrument` |
+| 17 | Positions | `/positions` → `/paper?tab=positions` | `App.tsx` `Positions` | `engine` positions | `GET /api/positions`; `POST /api/positions/{id}/exit`; `GET /api/orders` | R/W: `position`, `order_record`, `fill` |
+| — | Audit (extra) | `/audit` (Settings) | `App.tsx` `Audit` | — | `GET /api/audit` | R: `audit_event` |
 
 Shared ticker: `PaperTradeNotifications.tsx` `useTicker` → `GET /api/ticker`.
 
@@ -48,7 +63,8 @@ Shared ticker: `PaperTradeNotifications.tsx` `useTicker` → `GET /api/ticker`.
 
 | Module | File | Used by |
 |---|---|---|
-| Indicators EMA / RSI / ATR / VWAP / ADX | `backend/app/domain/indicators.py` | Dashboard (`strategy` + `option_buy`), Chart (`chart_service.series_from_bars`), Paper/Backtest (`index_strategy.features_from_bars`), Alerts (RSI/ATR via same helpers; EMA9/21 via `alert_indicators.ema_pair`) |
+| Last-bar snapshot | `backend/app/domain/market_facts.py` | Dashboard `snapshot_from_bars`, option-buy `futures_state`, Paper/Chart `features_from_bars`, Chart `last_facts`, Alerts shared EMA20/RSI/ATR |
+| Indicators EMA / RSI / ATR / VWAP / ADX | `backend/app/domain/indicators.py` | `market_facts` + Chart full series; Alerts still add EMA9/21 via `alert_indicators.ema_pair` |
 | Dashboard 9-condition engine | `domain/strategy.py` `evaluate_snapshot` | Dashboard, Chart live `market_view`, Strike selection signal, original auto-entry |
 | Option CE/PE 9-check | `domain/option_buy.py` + `services/option_buy.py` | Dashboard cards, option ladder |
 | Index BUY/SELL groups + gates | `domain/index_strategy.py` | Paper live_decisions, Chart hist markers, Backdated walk, `validate_index_entry` |
@@ -65,26 +81,28 @@ Shared ticker: `PaperTradeNotifications.tsx` `useTicker` → `GET /api/ticker`.
 
 ---
 
-## Dead / unreachable (confirmed unused by `frontend/src`)
+## Dead / unreachable
 
-| Item | Evidence |
+Removed in Step 12 after a `frontend/src` grep showed zero callers. Domain tests for `backtest.py` were kept. Engine still **writes** `signal` / `audit_event`.
+
+| Item | After Step 12 |
 |---|---|
-| `ExitAlerts` in `frontend/src/App.tsx:351` | Defined; never rendered. Dashboard uses `AlertHistory` instead. |
-| `GET /api/indicators` | No frontend caller. |
-| `GET /api/signals`, `GET /api/signals/current` | No frontend caller. `signal` / `signal_condition` still written by `engine.py`. |
-| `POST /api/backtests`, `GET /api/backtests/{id}`, `POST /api/backtests/ingest` | No frontend caller. UI uses `/api/historical-paper`. Tables `backtest_run`, `backtest_trade` are the old path. |
-| `GET/PUT /api/oi-scanner/config` | OI Control is client-side only (`oiControlMath.ts`). |
-| `GET/PUT /api/settings/broker` | Broker screen uses `/api/broker/*`. |
-| `GET /api/underlyings/{symbol}/expiries` | No frontend caller. |
-| `GET /api/alerts/settings` | UI reads config from `GET /api/alerts`; only PUT is used. |
-| `GET /api/strike-selection/runs` | No frontend caller. |
-| Extra nav **Audit** | Reachable but not in the 17-screen spec. |
+| `ExitAlerts` | Deleted from `App.tsx`. |
+| `GET /api/indicators` | 404 |
+| `GET /api/signals`, `GET /api/signals/current` | 404; table writes remain |
+| `/api/backtests*` | 404; UI uses `/api/historical-paper` |
+| `GET/PUT /api/oi-scanner/config` | 404 |
+| `GET/PUT /api/settings/broker` | 404; Broker uses `/api/broker/*` |
+| `GET /api/underlyings/{symbol}/expiries` | 404 |
+| `GET /api/alerts/settings` | GET 405; PUT kept |
+| `GET /api/strike-selection/runs` | 404 |
+| Audit nav | Settings group, route kept |
 
 ---
 
 ## Per-screen analysis
 
-### 1 Dashboard — PARTIAL
+### 1 Dashboard — PARTIAL (hist P&L fixed; live-enable removed)
 
 **Purpose.** Session briefing: ready? trend? preferred CE/PE? paper/risk snapshot.
 
@@ -98,9 +116,9 @@ Shared ticker: `PaperTradeNotifications.tsx` `useTicker` → `GET /api/ticker`.
 
 **Outputs.** Paper-orders → `position`. Live settings → `app_setting`. Does not write Alerts.
 
-**Evidence.** `GET /api/dashboard` 200, 45 KB, 2 markets, 0 positions, 0 alert_history rows, paper net **−751.28** (18 closed), hist net **−9971** (60 trades). Banner present.
+**Evidence.** Re-check: paper net **−751.28** (18 closed), hist net **−8021** (60 trades, “Historical paper run 2”). Banner present. LiveZerodhaPanel is view/sync; arming is on Broker.
 
-**Bugs.** H1 live-order panel on a “paper only” screen. H3 scores ≠ Alerts ≠ Paper. H5 hist P&L −9971 ≠ run 2 API −8021. Alert History empty while Alerts has 40 historical rows (different source).
+**Bugs remaining.** H3 scores ≠ Alerts ≠ Paper (four families, by design). Alert History empty while Alerts has historical rows (different source). H5 hist mismatch **fixed**.
 
 ---
 
@@ -122,7 +140,7 @@ Shared ticker: `PaperTradeNotifications.tsx` `useTicker` → `GET /api/ticker`.
 
 ---
 
-### 3 Chart — PARTIAL
+### 3 Chart — WORKING (NO_SESSION + live rail gated)
 
 **Purpose.** Plot index candles + indicators + paper markers; optional strike rail.
 
@@ -132,18 +150,19 @@ Shared ticker: `PaperTradeNotifications.tsx` `useTicker` → `GET /api/ticker`.
 
 | Date | Result |
 |---|---|
-| LIVE 2026-10-03 Sat | `data_status=OK`, **0 candles**, no warning (empty is correct; status OK is misleading). |
-| 2024-06-04 election | 125 3m bars 09:15–15:27, open 23179.5 → close 21996.45. 2 signals. Proxy warning. |
+| LIVE 2026-10-03 Sat | 0 candles. L3: LIVE can still report `data_status=OK` with an empty plot. |
+| 2024-06-04 election | 125 3m bars 09:15–15:27. `last_facts` matches series last EMA/RSI/ATR. |
 | 2025-08-28 Thu | 125 bars. Session exists. |
 | 2025-09-02 Tue | 125 bars. Session exists. |
-| 2026-10-03 Sat historical | **Clamped to 2026-10-01** (last stored), 125 bars, not “no session”. |
-| 2024-01-26 holiday | **Snaps to 2024-01-25**, warning “Showing 2024-01-25”, `data_status=OK`. |
+| 2026-10-03 Sat historical | **NO_SESSION**, 0 candles, `date_from=2026-10-03`. |
+| 2024-01-26 holiday | **NO_SESSION**, 0 candles, `date_from=2024-01-26`. |
+| 2024-06-08 Sat | **NO_SESSION**, 0 candles. |
 
 **Settings.** Paper index strategy for markers. Strategy params for indicator periods.
 
 **Outputs.** `chart_signal`. Live orders if armed.
 
-**Bugs.** H1 live rail. H4 weekend/holiday snap + Saturday clamp. Banner present but contradicts live rail.
+**Bugs remaining.** L3 LIVE `data_status=OK` with 0 candles (not changed). H1/H4 **fixed**.
 
 ---
 
@@ -197,17 +216,17 @@ Shared ticker: `PaperTradeNotifications.tsx` `useTicker` → `GET /api/ticker`.
 
 **What I can do.** Range, capital, threshold, strike range, full-range button, run, sweep, reopen runs.
 
-**Data.** Coverage NIFTY+SENSEX 2023-10-03→2026-10-01, 738 days. Runs: #2 COMPLETED 60 trades net **−8021** (INDEX_FUTURES_PROXY, 15W/45L); #3 COMPLETED **0 trades** (Balanced gates). Dashboard still shows hist **−9971**.
+**Data.** Coverage NIFTY+SENSEX 2023-10-03→2026-10-01, 738 days. Runs: #2 COMPLETED 60 trades net **−8021** (INDEX_FUTURES_PROXY, 15W/45L); #3 COMPLETED **0 trades** (Balanced gates). Dashboard hist now **−8021**.
 
 **Settings.** Posted `strategy: {}` plus paper index config. Sweep uses `index_exits` variants. Option `choose_exit` still exists on the CE/PE path.
 
 **Outputs.** `historical_paper_*` only. Alerts “historical paper alerts” read this book.
 
-**Bugs.** H2 expiry heuristic inside the walk. H5 P&L ≠ Dashboard hist block. Run 3 zero trades looks “broken” but is gates, not an empty placeholder.
+**Bugs remaining.** Run 3 zero trades looks “broken” but is gates, not an empty placeholder. H2/H5 **fixed**. Lives under Paper → Backdated.
 
 ---
 
-### 8 Option chain — PARTIAL
+### 8 Option chain — WORKING (banner + shared ATM)
 
 **Purpose.** Live ladder around ATM.
 
@@ -219,25 +238,25 @@ Shared ticker: `PaperTradeNotifications.tsx` `useTicker` → `GET /api/ticker`.
 
 **Outputs.** None.
 
-**Bugs.** M1 no paper banner. M3 ATM ≠ OI Scanner (22400 vs 22500). After-hours quotes look current.
+**Bugs remaining.** After-hours quotes look current. M1/M3 **fixed**. Lives under Option chain → Ladder.
 
 ---
 
-### 9 OI Scanner — PARTIAL
+### 9 OI Scanner — WORKING (ATM = chain spot)
 
 **Purpose.** OI concentration and change.
 
 **What I can do.** Expiry mode, window, period, sort, multi-strike control (local math, not saved).
 
-**Data.** Same OI integers as chain on overlapping strikes. `state=MARKET_CLOSED`, interval change blank, `context.expiry` empty, **ATM 22500** (futures 22520). Session start 09:15.
+**Data.** Same OI integers as chain on overlapping strikes. Re-check ATM **22400** (spot helper). `state=MARKET_CLOSED`, interval change blank.
 
-**Settings.** `GET/PUT /api/oi-scanner/config` unused by UI.
+**Settings.** Config HTTP removed. OI Control stays client-side.
 
-**Bugs.** M3 ATM mismatch (`oi_scanner.py:201` futures-or-spot). M1 no banner.
+**Bugs remaining.** After-hours interval change blank. M1/M3 **fixed**. Lives under Option chain → OI Scanner.
 
 ---
 
-### 10 Strike selection — PARTIAL
+### 10 Strike selection — PARTIAL (banner added; after-hours NO TRADE is honest)
 
 **Purpose.** One scored option or an explicit refusal.
 
@@ -297,7 +316,7 @@ Shared ticker: `PaperTradeNotifications.tsx` `useTicker` → `GET /api/ticker`.
 
 **Evidence.** `GET /api/broker/status` 200: connected, PAPER, kill off, db up. Connect opens a new tab (`App.tsx:521`). Redis down does not 500 this endpoint.
 
-**Bugs.** M4 can arm live from here despite paper-only product rule. No hypo banner.
+**Bugs remaining.** M4 Redis-down vs live loop (ops signal, not changed). Banner present. This is the only arming screen.
 
 ---
 
@@ -305,7 +324,7 @@ Shared ticker: `PaperTradeNotifications.tsx` `useTicker` → `GET /api/ticker`.
 
 **Purpose.** Intended blotter; in practice an empty viewer of a third ledger.
 
-**Evidence.** `GET /api/positions` `[]`, `GET /api/orders` `[]`. No banner. Does not read `paper_trade` or `historical_paper_trade` or Kite `positions().net`.
+**Evidence.** `GET /api/positions` `[]`, `GET /api/orders` `[]`. Banner present. Does not read `paper_trade` or `historical_paper_trade` or Kite `positions().net`. Lives under Paper → Positions. Step 13 (single ledger) was skipped.
 
 ---
 
@@ -315,21 +334,21 @@ Shared ticker: `PaperTradeNotifications.tsx` `useTicker` → `GET /api/ticker`.
 
 | Probe | Dashboard / live | Chart historical | Notes |
 |---|---|---|---|
-| Latest / 2026-10-03 Sat | NOT READY, last LTP 22421.95 | Live 0 candles; hist clamped to **2026-10-01** | User asked “no session, not fake data”. Hist **shows 1 Oct**. |
-| 2024-06-04 election | n/a (live only) | Real crash session, 125 bars | Matches known big-move day. |
-| Thu expiry before Sept 2025 (2025-08-28) | n/a | Real session | Code `is_index_expiry` → **False** (should be True per spec). |
-| Tue expiry after Sept 2025 (2025-09-02) | n/a | Real session | Code → **True** (agrees with spec). |
-| Holiday 2024-01-26 | n/a | Shows **2024-01-25** | Warning present; status still OK. |
-| Weekend 2026-10-03 | NOT READY | Clamped | Live empty OK. |
+| Latest / 2026-10-03 Sat | NOT READY, last LTP 22421.95 | Live 0 candles; hist **NO_SESSION** | Empty plot, `date_from` stays 2026-10-03. |
+| 2024-06-04 election | n/a (live only) | Real crash session, 125 bars | Pins: EMA 21932.479, RSI 54.582, ATR 85.366. |
+| Thu expiry before Sept 2025 (2025-08-28) | n/a | Real session | `is_index_expiry` → **True** (Thursday). |
+| Tue expiry after Sept 2025 (2025-09-02) | n/a | Real session | Code → **True**. |
+| Holiday 2024-01-26 | n/a | **NO_SESSION**, 0 candles | `date_from=2024-01-26`. |
+| Weekend 2026-10-03 | NOT READY | **NO_SESSION** | Paper live_decisions **HOLD**. |
 
-Expiry function (`index_strategy.py:917–927`):
+Expiry function (`is_index_expiry`, switch **2025-09-01**):
 
 ```
 2024-08-29 Thu → NIFTY expiry True
-2024-09-03 Tue → NIFTY expiry True   # spec: still Thursday until Sept 2025
-2025-08-28 Thu → NIFTY expiry False  # spec: still Thursday
+2024-09-03 Tue → NIFTY expiry False  # still Thursday until Sept 2025
+2025-08-28 Thu → NIFTY expiry True
 2025-09-02 Tue → NIFTY expiry True
-2026-10-06 Tue → NIFTY expiry True   # live chain expiry is this date
+2026-10-06 Tue → NIFTY expiry True
 SENSEX → Friday only
 ```
 
@@ -337,12 +356,12 @@ SENSEX → Friday only
 
 | Metric | Dashboard | Chart hist 2026-10-01 | Alerts | Paper live_decisions | Strike | Chain | OI Scanner |
 |---|---|---|---|---|---|---|---|
-| NIFTY LTP / close | 22421.95 spot / 22520 fut | last 22421.95 | score close **22520** | **22520** | 22421.95 | 22421.95 / ATM **22400** | ATM **22500** |
-| EMA | 22521.85 (1m live) | 22402.72 (3m archive day) | EMA21 22521.85 | 22506.06 (3m live) | — | — | — |
-| RSI | **49.24** | **60.07** | (not on snapshot) | **56.86** | — | — | — |
-| ATR | **10.36** | **19.66** | — | **23.67** | **10.36** | — | — |
-| CE / PE score | 33.33 / 22.22 | — | **24.67 / 43.33** | n/a (index) | NO TRADE | — | — |
-| Decision | NOT READY / no pref | 0 live candles | WAIT | **BUY** | NO TRADE | — | MARKET_CLOSED |
+| NIFTY LTP / close | 22421.95 spot / 22520 fut | last 22421.95 | score close **22520** | **22520** | 22421.95 | 22421.95 / ATM **22400** | ATM **22400** |
+| EMA | 22521.85 (1m live) | 22402.72 (3m archive day) | shared EMA20 + EMA9/21 | 22506.06 (3m live) | — | — | — |
+| RSI | **49.24** | **60.07** | shared from MarketFacts | **56.86** | — | — | — |
+| ATR | **10.36** | **19.66** | shared from MarketFacts | **23.67** | **10.36** | — | — |
+| CE / PE score | 33.33 / 22.22 | — | own scorer (not merged) | n/a (index) | NO TRADE | — | — |
+| Decision | NOT READY / no pref | 0 live candles | WAIT | **HOLD** (no session) | NO TRADE | — | MARKET_CLOSED |
 | 22400 CE OI | — | — | — | — | — | 3635255 | 3635255 |
 
 P&L books:
@@ -352,7 +371,7 @@ P&L books:
 | Paper Trading today | 0 | 0 |
 | Dashboard “Live paper P&L” | 18 | −751.28 |
 | Historical run 2 API | 60 | −8021 |
-| Dashboard “Latest historical paper P&L” | 60 | **−9971** |
+| Dashboard “Latest historical paper P&L” | 60 | **−8021** (matches run 2) |
 | Positions | 0 | — |
 
 ### Indicator hand-check (2024-06-04, 125 3-minute archive bars)
@@ -373,7 +392,7 @@ Session: 125 × 3m from 09:15 = last bar open 15:27, covering to 15:30. No UTC o
 
 - Frontend `:5999` serves HexTrade HTML (578 bytes index).
 - Redis down: health `redis=down`; Dashboard still 200.
-- Live chart Saturday: empty plot, status OK, no “no session” copy.
+- Live chart Saturday: empty plot. Hist weekend/holiday: NO_SESSION. L3 LIVE status OK with 0 candles left as-is.
 - Chain empty-state copy only if `rows` empty (not the case).
 - Strike selection after hours: honest NO TRADE.
 - Paper inputs that **do** persist: settings PUT. Mode buttons write `paper_mode`.
@@ -382,15 +401,19 @@ Session: 125 × 3m from 09:15 = last bar open 15:27, covering to 15:30. No UTC o
 
 ---
 
-## Bugs (do not fix in this pass)
+## Bugs
 
-### H1 — Live Zerodha orders on “paper/alerts only” screens — High
+High items from the morning audit were fixed on `refactor/screens`. Medium/Low that change behaviour were **not** touched except where the plan already required them (banner, ATM helper, dead HTTP).
+
+### H1 — Live Zerodha orders on “paper/alerts only” screens — High — **FIXED**
 
 Dashboard `LiveZerodhaPanel` and Chart `ChartStrikeTrade` call `POST /api/trading/zerodha/order`. Banner says no broker orders. Default is paper, but the control is on the main briefing/chart.
 
 **Repro.** Broker connected → Dashboard or Chart → enable live with `PLACE REAL ORDERS` → BUY CE/PE. Order goes to Kite, not `paper_trade`.
 
-### H2 — NIFTY weekly expiry switch is 2024-09-01, not Sept 2025 — High
+Arming and the chart-live latch live on Broker. Dashboard panel is view/sync. Chart BUY stays hidden unless `chart_live_enabled`.
+
+### H2 — NIFTY weekly expiry switch is 2024-09-01, not Sept 2025 — High — **FIXED** (now 2025-09-01)
 
 ```917:927:backend/app/domain/index_strategy.py
 def is_index_expiry(symbol: str, day) -> bool:
@@ -402,7 +425,7 @@ def is_index_expiry(symbol: str, day) -> bool:
 
 **Repro.** Any index walk on 2025-08-28 (Thursday before Sept 2025): code says not expiry (square-off / buyer window wrong). 2024-09-03 Tuesday: code says expiry (too early). Calendar screen does **not** use this function (it uses listed expiries). Live chain 2026-10-06 Tuesday is fine.
 
-### H3 — Four decision engines disagree; paper shows BUY on a Saturday — High
+### H3 — Four decision engines disagree; paper shows BUY on a Saturday — High — **PARTIAL FIXED**
 
 Same afternoon 2026-10-03:
 
@@ -411,21 +434,21 @@ Same afternoon 2026-10-03:
 - Paper Trading: NIFTY **BUY 75** (legacy 7 conditions), RSI 56.86
 - Chart LIVE: 0 candles
 
-`decide()` in `index_strategy.py:630` does not require session/weekday. `validate_index_entry` exists but is not applied to `live_index_decisions` (`paper_engine.py:890–925`).
+Saturday paper is **HOLD**. Four scorers still disagree on purpose (Step 11 did not merge formulas). Shared last-bar EMA/RSI/ATR when the timeframe and bars match.
 
-### H4 — Holiday/weekend Chart does not show “no session” — High
+### H4 — Holiday/weekend Chart does not show “no session” — High — **FIXED**
 
 `chart_service.py:148–163` snaps to the previous stored session and keeps `data_status=OK`. Saturday beyond archive end is **clamped** to 2026-10-01. User asked for empty / “no session”, not another day’s candles.
 
 **Repro.** Chart → HISTORICAL ANALYSIS → 2024-01-26 or 2026-10-03 → Apply. You get 25 Jan / 1 Oct.
 
-### H5 — P&L books do not match — High
+Single-day empty sessions return `NO_SESSION` and `candles=[]` without rewriting `date_from`.
 
-Three (plus Zerodha) ledgers. Dashboard hist −9971 ≠ run 2 −8021. Paper today 0 ≠ dashboard live paper −751.28. Positions [].
+### H5 — P&L books do not match — High — **PARTIAL FIXED**
 
-**Repro.** Open Dashboard archive block, Paper Trading, Backdated Paper run 2, Positions. Four different answers.
+Dashboard hist now equals latest completed run (−8021). Today / live-paper window / Positions / Kite net remain separate books (Step 13 skipped).
 
-### M1 — Required paper banner missing on several screens — Medium
+### M1 — Required paper banner missing on several screens — Medium — **FIXED**
 
 Chain, OI Scanner, Strike selection, Strategy, Option selection, Exits, Risk, Broker, Positions.
 
@@ -433,7 +456,7 @@ Chain, OI Scanner, Strike selection, Strategy, Option selection, Exits, Risk, Br
 
 UI ticker converts via `formatAsOfIst`. Alert table may show 12:34 when IST is 18:04.
 
-### M3 — Option chain ATM ≠ OI Scanner ATM — Medium
+### M3 — Option chain ATM ≠ OI Scanner ATM — Medium — **FIXED**
 
 Chain uses spot 22421.95 → 22400. Scanner uses `futures_ltp or ltp` (`oi_scanner.py:201`) 22520 → 22500. OI **integers** match.
 
@@ -441,11 +464,11 @@ Chain uses spot 22421.95 → 22400. Scanner uses `futures_ltp or ltp` (`oi_scann
 
 `/api/health` redis=down. Live path `evaluate_risk` blocks LIVE if Redis is down; paper path does not need it. Confusing ops signal.
 
-### L1 — `ExitAlerts` dead component — Low
+### L1 — `ExitAlerts` dead component — Low — **FIXED** (removed)
 
 `App.tsx:351`.
 
-### L2 — Unused REST surface — Low
+### L2 — Unused REST surface — Low — **FIXED** (listed routes removed)
 
 See dead-code table. Old `/api/backtests` can confuse a future sweep with `/api/historical-paper`.
 
@@ -455,13 +478,15 @@ Saturday LIVE_PAPER.
 
 ---
 
-## Status roll-up (17 specified screens)
+## Status roll-up (17 specified screens, after refactor)
 
 | Status | Count | Screens |
 |---|---|---|
-| WORKING | 5 | Calendar patterns, Historical Data, Strike selection config, Strategy, Broker |
-| PARTIAL | 11 | Dashboard, Chart, Alerts, Paper Trading, Backdated Paper, Option chain, OI Scanner, Strike selection, Option selection, Exits, Risk |
+| WORKING | 11 | Calendar patterns, Chart (hist session), Historical Data, Option chain, OI Scanner, Strike selection config, Strategy, Option selection, Exits, Risk, Broker |
+| PARTIAL | 5 | Dashboard (four scorers), Alerts (own score), Paper Trading, Backdated Paper (separate books), Strike selection (after-hours NO TRADE) |
 | BROKEN | 0 | — |
-| PLACEHOLDER | 1 | Positions |
+| PLACEHOLDER | 1 | Positions (still a third ledger; Step 13 skipped) |
 
-Extra Audit: WORKING as a log viewer (not counted).
+Extra Audit: WORKING as a log viewer (Settings).
+
+Ask before changing: **M2** UTC leakage, **M4** Redis-down health, **L3** LIVE `data_status=OK` with 0 candles — those would change displayed times or status text.
