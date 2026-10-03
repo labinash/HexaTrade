@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { DateField } from "./fields";
 import { api } from "./api";
 import { fmt, usePoll } from "./lib";
+import { PaperBanner } from "./PaperBanner";
 
 function money(value: unknown) {
   if (value === null || value === undefined || value === "") return "—";
@@ -109,7 +110,7 @@ export function BackdatedPaper() {
   return (
     <>
       <h1>Backdated Paper Trading</h1>
-      <p className="paper"><strong>PAPER SIMULATION — NO REAL ORDERS</strong></p>
+      <PaperBanner extra="PAPER SIMULATION on stored history. This book is not today's Paper Trading and not Positions." />
       <p className="muted">{data.note}</p>
       <CoverageNote coverage={data.coverage || []} instrument={instrument} />
 

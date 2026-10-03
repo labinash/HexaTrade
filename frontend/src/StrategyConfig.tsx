@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { FieldGroup, FieldInput } from "./fields";
+import { PaperBanner } from "./PaperBanner";
 
 type Group = { title: string; note?: string; keys: string[] };
 
@@ -184,9 +185,9 @@ export function StrategyConfig() {
   return (
     <>
       <h1>Strategy configuration</h1>
+      <PaperBanner extra="These values are settings you chose, not parameters shown to be profitable." />
       <p className="muted">
-        Version {form.version_number}. Saving creates a new version rather than overwriting this one. These values are
-        settings you chose, not parameters shown to be profitable.
+        Version {form.version_number}. Saving creates a new version rather than overwriting this one.
       </p>
 
       <section className="card">

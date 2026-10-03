@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "./api";
 import { fmt, usePoll } from "./lib";
+import { PaperBanner } from "./PaperBanner";
 
 function bar(percent: number) {
   const width = Math.max(0, Math.min(100, Number(percent) || 0));
@@ -62,8 +63,9 @@ export function HistoricalData() {
   return (
     <>
       <h1>Historical Market Data</h1>
+      <PaperBanner extra="Import writes the archive only. It never mixes into the live candle table and never sends an order." />
       <p className="muted">
-        Stores a dedicated 1-minute NIFTY/SENSEX series for backtests. Does not write into the live candle table and never sends an order.
+        Stores a dedicated 1-minute NIFTY/SENSEX series for backtests.
       </p>
       <p className="warn">{data.option_data_note}</p>
 

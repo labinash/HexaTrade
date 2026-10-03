@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { FieldGroup } from "./fields";
 import { fmt, fmt4, usePoll } from "./lib";
+import { PaperBanner } from "./PaperBanner";
 
 const UNDERLYINGS = ["NIFTY", "SENSEX"];
 
@@ -30,6 +31,7 @@ export function StrikeSelection() {
   return (
     <>
       <h1>Strike selection</h1>
+      <PaperBanner extra="A selected strike is a suitability rank, not a BUY. Paper-trade writes the Positions book." />
       <div className="row">
         <select value={underlying} onChange={(event) => setUnderlying(event.target.value)}>
           {UNDERLYINGS.map((symbol) => <option key={symbol}>{symbol}</option>)}
@@ -302,6 +304,7 @@ export function StrikeSelectionConfig() {
   return (
     <>
       <h1>Strike selection configuration</h1>
+      <PaperBanner extra="NIFTY and SENSEX are stored separately. Weights rank suitability, not probability of profit." />
       <div className="row">
         <select value={underlying} onChange={(event) => setUnderlying(event.target.value)}>
           {Object.keys(all).map((symbol) => <option key={symbol}>{symbol}</option>)}

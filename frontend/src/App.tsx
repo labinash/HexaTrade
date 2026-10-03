@@ -17,6 +17,7 @@ import { CalendarPatterns } from "./CalendarPatterns";
 import { ChartTradeBrief } from "./ChartTradeBrief";
 import { LiveZerodhaPanel } from "./LiveZerodhaPanel";
 import { StrikeSelection, StrikeSelectionConfig } from "./StrikeSelection";
+import { PaperBanner } from "./PaperBanner";
 
 const links = [
   ["/", "Dashboard"],
@@ -390,6 +391,7 @@ function Chain() {
   return (
     <>
       <h1>Option chain</h1>
+      <PaperBanner extra="Quotes are observational. An OI increase is not proof of long buildup." />
       <div className="row">
         <select value={underlying} onChange={(event) => setUnderlying(event.target.value)}>
           <option>NIFTY</option>
@@ -459,7 +461,8 @@ function ConfigScreen({ title, section, savePath }: { title: string; section: st
   return (
     <>
       <h1>{title}</h1>
-      <p className="muted">Version {form.version_number}. Saving creates a new version. These values are not a claim of profitability.</p>
+      <PaperBanner extra="These values are settings, not a claim of profitability." />
+      <p className="muted">Version {form.version_number}. Saving creates a new version.</p>
       <div className="form">
         {Object.entries(fields).map(([key, value]) => (
           <label key={key}>
@@ -487,6 +490,7 @@ function RiskScreen() {
   return (
     <>
       <h1>Risk management</h1>
+      <PaperBanner extra="These limits apply to the original engine and live-order checks. Paper Trading has its own daily-loss settings." />
       <p className="warn">SENSEX does not reuse the NIFTY ATR threshold. Leave it empty until you set one.</p>
       <div className="form">
         {form.underlyings.map((row: any, index: number) => (
@@ -512,6 +516,7 @@ function RiskScreen() {
 
 function Broker() {
   const { data, error } = usePoll<any>("/api/broker/status", 8000);
+  const { data: live } = usePoll<any>("/api/trading/live-settings", 8000);
   const [phrase, setPhrase] = useState("");
   const [requestToken, setRequestToken] = useState("");
   const [message, setMessage] = useState("");
@@ -539,6 +544,7 @@ function Broker() {
   return (
     <>
       <h1>Broker</h1>
+      <PaperBanner extra="This is the only screen that can arm live trading. Chart and Dashboard cannot enable it." />
       {error ? <p className="error">{error}</p> : null}
       {data?.error || data?.database === "down" ? (
         <p className="warn">SQL Server is not accepting connections right now. Connect Zerodha still works after the database comes back. Tokens stay on the backend.</p>
@@ -574,8 +580,21 @@ function Broker() {
           <div className="row">
             <input value={phrase} placeholder="PLACE REAL ORDERS" onChange={(event) => setPhrase(event.target.value)} />
             <button onClick={() => call("/api/trading/arm", { confirmation: phrase })}>Enable live trading</button>
+            <button
+              className={live?.chart_live_enabled ? "primary" : ""}
+              onClick={() => api("/api/trading/live-settings", {
+                method: "PUT",
+                body: JSON.stringify({ enabled: !live?.chart_live_enabled, confirmation: live?.chart_live_enabled ? "" : phrase }),
+              }).then((result: any) => setMessage(result.badge || result.note || "chart live updated")).catch((err) => setMessage(err.message))}
+            >
+              {live?.chart_live_enabled ? "Chart live orders ON" : "Enable chart live orders"}
+            </button>
             <button onClick={() => call("/api/trading/kill-switch")}>Kill switch</button>
           </div>
+          <p className="muted">
+            Chart live orders ({live?.badge || "PAPER TRADING"}) is the latch Chart BUY uses. Dashboard cannot turn it on.
+            Type PLACE REAL ORDERS, then Enable chart live orders.
+          </p>
           <ul>{(data.notes || []).map((note: string) => <li key={note}>{note}</li>)}</ul>
           <p>{message}</p>
         </>
@@ -591,6 +610,7 @@ function Positions() {
   return (
     <>
       <h1>Positions and orders</h1>
+      <PaperBanner extra="This table is the original position book, not Paper Trading today and not Backdated Paper." />
       {error ? <p className="error">{error}</p> : null}
       <table>
         <thead><tr><th className="left">Mode</th><th className="left">Symbol</th><th>Entry</th><th>LTP / exit</th><th>P&L</th><th>Stop</th><th>Target</th><th>Reason</th><th></th></tr></thead>
@@ -628,6 +648,7 @@ function Audit() {
   return (
     <>
       <h1>Audit log</h1>
+      <PaperBanner extra="Event log only. Nothing here places an order." />
       {error ? <p className="error">{error}</p> : null}
       <table>
         <thead><tr><th className="left">Time</th><th className="left">Event</th><th className="left">Underlying</th><th>Result</th><th className="left">Reason</th></tr></thead>

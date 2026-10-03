@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { fmt, usePoll } from "./lib";
+import { PaperBanner } from "./PaperBanner";
 import { OiControlPanel } from "./OiControl";
 import { ControlContract, fmtLakhs, fmtLakhsSigned } from "./oiControlMath";
 
@@ -107,8 +108,9 @@ export function OiScanner() {
   return (
     <>
       <h1>OI Scanner</h1>
+      <PaperBanner extra="Open interest is shown in lakhs. This screen does not place orders." />
       <p className="muted">
-        Call OI vs Put OI around each strike. Open interest is shown in lakhs. This screen does not place orders.
+        Call OI vs Put OI around each strike.
       </p>
 
       <div className="row tabs">

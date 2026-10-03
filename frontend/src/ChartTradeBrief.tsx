@@ -1,4 +1,5 @@
 import { fmt, usePoll } from "./lib";
+import { PaperBanner } from "./PaperBanner";
 
 export function ChartTradeBrief() {
   const { data, error } = usePoll<any>("/api/trading/dashboard-brief", 20000);
@@ -6,6 +7,7 @@ export function ChartTradeBrief() {
   return (
     <section className="card trade-brief">
       <h2>Strategy vs live book</h2>
+      <PaperBanner extra="This brief does not place an order. Arm chart live orders on Broker if you intend a real BUY." />
       <p className="muted">Signal, what you can buy, and what Zerodha actually holds stay separate. Market Ready is not a BUY.</p>
       {error ? <p className="error">{error}</p> : null}
       <div className="grid">

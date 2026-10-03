@@ -1,32 +1,16 @@
 import { useState } from "react";
+import { NavLink } from "react-router-dom";
 import { api } from "./api";
 import { fmt, usePoll } from "./lib";
+import { PaperBanner } from "./PaperBanner";
 
 export function LiveZerodhaPanel() {
   const { data, error } = usePoll<any>("/api/trading/zerodha/snapshot", 12000);
   const settings = data?.settings || {};
   const net = data?.positions?.net || [];
   const open = net.filter((row: any) => Number(row.quantity) !== 0);
-  const [phrase, setPhrase] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-
-  async function toggle(enabled: boolean) {
-    setBusy(true);
-    setMessage("");
-    try {
-      await api("/api/trading/live-settings", {
-        method: "PUT",
-        body: JSON.stringify({ enabled, confirmation: enabled ? phrase : "" }),
-      });
-      setPhrase("");
-      setMessage(enabled ? "Live trading enabled for this process." : "Live trading off. BUY CE/PE is paper.");
-    } catch (err: any) {
-      setMessage(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function sync() {
     setBusy(true);
@@ -55,23 +39,11 @@ export function LiveZerodhaPanel() {
         Position book: <strong>net</strong> (Zerodha <code>positions().net</code> only)
         {broker ? <> · Broker session: <strong>{broker}</strong></> : null}
       </p>
+      <PaperBanner extra="This panel is a read-only Zerodha book. Arm or disarm live trading only on Broker." />
       <p className="muted">These rows come from Zerodha kite.positions() net. Paper / strategy P&amp;L is listed under Archive. A paper fill is never shown here as a broker position.</p>
-      <div className="row">
-        <label>
-          Enable Live Trading
-          <button type="button" className={live ? "primary" : ""} disabled={busy} onClick={() => toggle(!live)}>
-            {live ? "ON" : "OFF"}
-          </button>
-        </label>
-        {!live ? (
-          <input
-            value={phrase}
-            placeholder="PLACE REAL ORDERS"
-            onChange={(event) => setPhrase(event.target.value)}
-            disabled={busy}
-          />
-        ) : null}
-      </div>
+      <p className="muted">
+        <NavLink to="/broker">Open Broker</NavLink> to type PLACE REAL ORDERS or turn live trading off.
+      </p>
       {error ? <p className="error">{error}</p> : null}
       {data?.ok === false || data?.error ? (
         <p className="warn">Live Zerodha book was not loaded. {data?.error || error || "This table is empty until kite.positions() net returns rows. It is not paper P&L."}</p>

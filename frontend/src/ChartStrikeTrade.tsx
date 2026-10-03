@@ -54,6 +54,7 @@ export function ChartStrikeTrade({ instrument, enabled }: { instrument: string; 
             {data?.trading?.badge || "PAPER TRADING"}
           </span>
         </p>
+        <p className="paper">HYPOTHETICAL / PAPER signals only. No broker orders unless Broker has armed live trading.</p>
         <p className="muted">{data?.note}</p>
         {error ? <p className="error">{error}</p> : null}
         {data?.blocked_reason ? <p className="warn">{data.blocked_reason}</p> : null}
@@ -141,9 +142,9 @@ function ContractCard({
         disabled={!contract.available && !contract.tradingsymbol}
         onClick={onBuy}
       >
-        BUY {kind}
+        {live ? `LIVE BUY ${kind}` : `PAPER BUY ${kind}`}
       </button>
-      <p className="muted">{live ? "LIVE ZERODHA if confirmed" : "PAPER"}</p>
+      <p className="muted">{live ? "LIVE ZERODHA if confirmed — armed on Broker" : "PAPER — nothing is sent to Zerodha"}</p>
     </div>
   );
 }
