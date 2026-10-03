@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { fmt, usePoll } from "./lib";
@@ -19,25 +19,11 @@ import { LiveZerodhaPanel } from "./LiveZerodhaPanel";
 import { StrikeSelection, StrikeSelectionConfig } from "./StrikeSelection";
 import { PaperBanner } from "./PaperBanner";
 
-const links = [
-  ["/", "Dashboard"],
-  ["/calendar-patterns", "Calendar patterns"],
-  ["/chart", "Chart"],
-  ["/alerts", "Alerts"],
-  ["/paper-trading", "Paper Trading"],
-  ["/historical-data", "Historical Data"],
-  ["/backdated-paper", "Backdated Paper"],
-  ["/chain", "Option chain"],
-  ["/oi-scanner", "OI Scanner"],
-  ["/strike-selection", "Strike selection"],
-  ["/strike-selection/config", "Strike selection config"],
-  ["/strategy", "Strategy"],
-  ["/selection", "Option selection"],
-  ["/exits", "Exits"],
-  ["/risk", "Risk"],
-  ["/broker", "Broker"],
-  ["/positions", "Positions"],
-  ["/audit", "Audit"],
+const navGroups: { title: string; items: [string, string][] }[] = [
+  { title: "Monitor", items: [["/", "Dashboard"], ["/chart", "Chart"], ["/alerts", "Alerts"]] },
+  { title: "Trade", items: [["/paper", "Paper"], ["/chain", "Option chain"]] },
+  { title: "Research", items: [["/calendar-patterns", "Calendar patterns"], ["/historical-data", "Historical Data"]] },
+  { title: "Settings", items: [["/strategy", "Strategy"], ["/strike-selection", "Strike engine"], ["/broker", "Broker"]] },
 ];
 
 export function App() {
@@ -49,11 +35,17 @@ export function App() {
           <nav>
             <strong>HexTrade</strong>
             <p className="muted">Analysis first. Live orders stay disarmed after every restart.</p>
-            {links.map(([to, label]) => (
-              <NavLink key={to} to={to} end>
-                {label}
-              </NavLink>
+            {navGroups.map((group) => (
+              <div key={group.title} className="nav-group">
+                <p className="nav-group-title">{group.title}</p>
+                {group.items.map(([to, label]) => (
+                  <NavLink key={to} to={to} end={to === "/" || to === "/strategy" || to === "/strike-selection" || to === "/chain" || to === "/paper"}>
+                    {label}
+                  </NavLink>
+                ))}
+              </div>
             ))}
+            <NavLink to="/audit" className="nav-audit">Audit</NavLink>
           </nav>
           <main>
             <Routes>
@@ -61,19 +53,20 @@ export function App() {
               <Route path="/calendar-patterns" element={<CalendarPatterns />} />
               <Route path="/chart" element={<MarketChart />} />
               <Route path="/alerts" element={<AlertCenter />} />
-              <Route path="/paper-trading" element={<PaperTrading />} />
+              <Route path="/paper" element={<PaperHub />} />
+              <Route path="/paper-trading" element={<Navigate to="/paper?tab=today" replace />} />
               <Route path="/historical-data" element={<HistoricalData />} />
-              <Route path="/backdated-paper" element={<BackdatedPaper />} />
-              <Route path="/chain" element={<Chain />} />
-              <Route path="/oi-scanner" element={<OiScanner />} />
-              <Route path="/strike-selection" element={<StrikeSelection />} />
-              <Route path="/strike-selection/config" element={<StrikeSelectionConfig />} />
-              <Route path="/strategy" element={<Strategy />} />
-              <Route path="/selection" element={<Selection />} />
-              <Route path="/exits" element={<Exits />} />
-              <Route path="/risk" element={<Risk />} />
+              <Route path="/backdated-paper" element={<Navigate to="/paper?tab=backdated" replace />} />
+              <Route path="/chain" element={<ChainHub />} />
+              <Route path="/oi-scanner" element={<Navigate to="/chain?tab=oi" replace />} />
+              <Route path="/strike-selection" element={<StrikeHub />} />
+              <Route path="/strike-selection/config" element={<Navigate to="/strike-selection?tab=config" replace />} />
+              <Route path="/strategy" element={<StrategyHub />} />
+              <Route path="/selection" element={<Navigate to="/strategy?tab=option" replace />} />
+              <Route path="/exits" element={<Navigate to="/strategy?tab=exits" replace />} />
+              <Route path="/risk" element={<Navigate to="/strategy?tab=risk" replace />} />
               <Route path="/broker" element={<Broker />} />
-              <Route path="/positions" element={<Positions />} />
+              <Route path="/positions" element={<Navigate to="/paper?tab=positions" replace />} />
               <Route path="/audit" element={<Audit />} />
             </Routes>
           </main>
@@ -209,6 +202,83 @@ function PaperAutoStatus({ status }: { status: any }) {
         <p className="muted">{status.message || "Signal monitoring active. No automatic paper entries."}</p>
       )}
     </section>
+  );
+}
+
+function useScreenTab(defaultTab: string) {
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") || defaultTab;
+  function setTab(next: string) {
+    setParams({ tab: next }, { replace: true });
+  }
+  return [tab, setTab] as const;
+}
+
+function ScreenTabs({ tabs, value, onChange }: { tabs: [string, string][]; value: string; onChange: (id: string) => void }) {
+  return (
+    <div className="row tabs">
+      {tabs.map(([id, label]) => (
+        <button key={id} type="button" className={value === id ? "tab active" : "tab"} onClick={() => onChange(id)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PaperHub() {
+  const [tab, setTab] = useScreenTab("today");
+  return (
+    <>
+      <ScreenTabs
+        tabs={[["today", "Today"], ["backdated", "Backdated"], ["positions", "Positions"]]}
+        value={tab}
+        onChange={setTab}
+      />
+      <p className="muted">Today uses paper_trade. Backdated uses historical_paper_*. Positions uses the original position table. These P&amp;Ls are not the same book.</p>
+      {tab === "today" ? <PaperTrading /> : null}
+      {tab === "backdated" ? <BackdatedPaper /> : null}
+      {tab === "positions" ? <Positions /> : null}
+    </>
+  );
+}
+
+function StrategyHub() {
+  const [tab, setTab] = useScreenTab("conditions");
+  return (
+    <>
+      <ScreenTabs
+        tabs={[["conditions", "Conditions"], ["option", "Option pick"], ["exits", "Exits"], ["risk", "Risk"]]}
+        value={tab}
+        onChange={setTab}
+      />
+      <p className="muted">One strategy version. Index paper exits use a different engine than the Exits tab. Saving still creates a new version.</p>
+      {tab === "conditions" ? <Strategy /> : null}
+      {tab === "option" ? <Selection /> : null}
+      {tab === "exits" ? <Exits /> : null}
+      {tab === "risk" ? <Risk /> : null}
+    </>
+  );
+}
+
+function StrikeHub() {
+  const [tab, setTab] = useScreenTab("run");
+  return (
+    <>
+      <ScreenTabs tabs={[["run", "Run"], ["config", "Config"]]} value={tab} onChange={setTab} />
+      {tab === "run" ? <StrikeSelection /> : <StrikeSelectionConfig />}
+    </>
+  );
+}
+
+function ChainHub() {
+  const [tab, setTab] = useScreenTab("ladder");
+  return (
+    <>
+      <ScreenTabs tabs={[["ladder", "Ladder"], ["oi", "OI Scanner"]]} value={tab} onChange={setTab} />
+      <p className="muted">ATM defaults to spot so both tabs agree. Futures ATM is still computed for reference on the scanner API.</p>
+      {tab === "ladder" ? <Chain /> : <OiScanner />}
+    </>
   );
 }
 
@@ -438,7 +508,12 @@ function Selection() {
   return <ConfigScreen title="Option selection" section="selection" savePath="/api/option-selection" />;
 }
 function Exits() {
-  return <ConfigScreen title="Exit strategy" section="exits" savePath="/api/exits" />;
+  return (
+    <>
+      <p className="muted">These fields feed choose_exit for option / original-engine positions. Index paper and Backdated index proxy use the structural index exit engine, not this list.</p>
+      <ConfigScreen title="Exit strategy" section="exits" savePath="/api/exits" />
+    </>
+  );
 }
 function Risk() {
   return <RiskScreen />;

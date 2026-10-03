@@ -43,6 +43,9 @@ button.primary { background: #8c5a2b; border-color: #8c5a2b; }
 .ticker-broker { padding: 0; background: none; border: none; }
 .ticker-broker:hover, nav a.ticker-broker.active { background: none; text-decoration: underline; }
 nav { padding: 16px; background: #101412; border-right: 1px solid #2a312d; }
+.nav-group { margin-bottom: 14px; }
+.nav-group-title { margin: 0 0 4px; padding: 0 10px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8a8478; }
+.nav-audit { margin-top: 12px; opacity: 0.75; }
 nav a { display: block; padding: 8px 10px; border-radius: 4px; }
 nav a.active, nav a:hover { background: #24302a; }
 main { padding: 20px 24px 48px; }
