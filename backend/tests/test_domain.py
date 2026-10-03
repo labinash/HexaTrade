@@ -4,6 +4,7 @@ from app.core.clock import IST
 from app.domain.backtest import run_backtest
 from app.domain.candles import Bar
 from app.domain.exits import ExitPolicyParams
+from app.domain.chain import atm_price, atm_strike
 from app.domain.indicators import atr, ema, rsi
 from app.domain.paper import simulate_fill
 from app.domain.risk import RiskContext, evaluate_risk, orders_allowed
@@ -221,3 +222,12 @@ def _risk(mode: str) -> RiskContext:
         max_trades_per_underlying=2, cooldown_active=False, duplicate_signal=False,
         redis_ok=True, database_ok=True,
     )
+
+
+def test_atm_defaults_to_spot_so_chain_and_scanner_agree():
+    strikes = [22400.0, 22450.0, 22500.0]
+    assert atm_price(22421.95, 22520.0, "spot") == 22421.95
+    assert atm_price(22421.95, 22520.0, "futures") == 22520.0
+    assert atm_strike(strikes, 22421.95, 22520.0, basis="spot") == 22400.0
+    assert atm_strike(strikes, 22421.95, 22520.0, basis="futures") == 22500.0
+    assert atm_strike(strikes, 22421.95) == 22400.0

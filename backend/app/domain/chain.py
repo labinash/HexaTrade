@@ -60,10 +60,29 @@ def strike_interval(strikes: list[float]) -> float | None:
     return Counter(diffs).most_common(1)[0][0]
 
 
-def atm_strike(strikes: list[float], spot: float) -> float | None:
-    if not strikes:
+def atm_price(spot: float | None, futures: float | None = None, basis: str = "spot") -> float | None:
+    """Default ATM to spot so chain and OI Scanner agree. Futures is an explicit opt-in."""
+    wanted = str(basis or "spot").lower()
+    if wanted == "futures":
+        return futures if futures is not None else spot
+    return spot if spot is not None else futures
+
+
+def atm_strike(
+    strikes: list[float],
+    spot: float | None,
+    futures: float | None = None,
+    basis: str = "spot",
+    interval: float | None = None,
+) -> float | None:
+    price = atm_price(spot, futures, basis)
+    if price is None:
         return None
-    return min(strikes, key=lambda strike: (abs(strike - spot), strike))
+    if strikes:
+        return min(strikes, key=lambda strike: (abs(strike - price), strike))
+    if interval and interval > 0:
+        return round(price / interval) * interval
+    return None
 
 
 def max_pain(strikes: list[float], call_oi: dict[float, float], put_oi: dict[float, float]) -> float | None:

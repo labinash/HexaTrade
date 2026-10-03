@@ -195,12 +195,12 @@ def scan(db: Session, runtime, symbol: str, overrides: dict, as_of: time | None 
                     )
                 )
 
+    from app.domain.chain import atm_strike
     from app.services.engine import market_view
 
     view = market_view(db, runtime, symbol)
-    price = view.get("futures_ltp") or view.get("ltp")
     strikes = sorted({item.strike for item in contracts})
-    atm = min(strikes, key=lambda strike: (abs(strike - price), strike)) if strikes and price else None
+    atm = atm_strike(strikes, view.get("ltp"), view.get("futures_ltp"), basis="spot")
     interval = _strike_interval(strikes)
     if atm is not None and not show_all:
         keep = set(window_strikes(strikes, atm, config.strikes_above, config.strikes_below))
@@ -259,6 +259,9 @@ def scan(db: Session, runtime, symbol: str, overrides: dict, as_of: time | None 
         "expiries": [item.isoformat() for item in list_expiries(db, symbol)],
         "expiries_shown": [item.isoformat() for item in expiry_list],
         "atm": atm,
+        "atm_basis": "spot",
+        "atm_spot": atm_strike(strikes, view.get("ltp"), view.get("futures_ltp"), basis="spot"),
+        "atm_futures": atm_strike(strikes, view.get("ltp"), view.get("futures_ltp"), basis="futures"),
         "strike_interval": interval,
         "context": {
             "spot": view.get("ltp"),
