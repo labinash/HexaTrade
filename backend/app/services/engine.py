@@ -1251,16 +1251,13 @@ def _archive_and_paper_metrics(db: Session) -> dict:
                 "sell_score": float(row.sell_score) if row.sell_score is not None else None,
                 "strategy_name": row.strategy_name,
             }
-            if str(row.option_type) in {"BUY", "SELL"} and row.exit_price is not None:
-                gross, slip, net = index_paper_net(row.option_type, row.entry_price, row.exit_price, row.quantity, slippage_points=0.5)
-                item["gross_pnl"] = float(gross)
-                item["slippage"] = float(slip)
-                item["total_charges"] = float(slip)
-                item["brokerage"] = 0
-                item["net_pnl"] = float(net)
             hist_rows.append(item)
     live_perf = performance_from_trades(paper_rows)
     hist_perf = performance_from_trades(hist_rows)
+    if latest_run is not None and hist_perf is not None:
+        hist_perf["net_pnl"] = float(latest_run.net_pnl or 0)
+        hist_perf["total_trades"] = int(latest_run.total_trades or hist_perf.get("total_trades") or 0)
+        hist_perf["label"] = f"Historical paper run {latest_run.id}"
     return {
         "timezone": "Asia/Kolkata",
         "data_source": "market_historical_data INDEX 1Minute",
